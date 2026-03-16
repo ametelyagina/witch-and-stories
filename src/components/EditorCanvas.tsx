@@ -1,7 +1,7 @@
 import { Layer } from '../editor/types';
 import { Stage, Layer as KonvaLayer, Text, Transformer, Image as KonvaImage } from 'react-konva';
 import Konva from 'konva';
-import { MutableRefObject, RefObject } from 'react';
+import { DragEvent, MutableRefObject, RefObject } from 'react';
 
 type EditorCanvasProps = {
   stageRef: RefObject<Konva.Stage | null>;
@@ -17,6 +17,7 @@ type EditorCanvasProps = {
   onTransform: (id: string, event: Konva.KonvaEventObject<Event>) => void;
   transformerRef: RefObject<Konva.Transformer | null>;
   nodeRefs: MutableRefObject<Record<string, Konva.Node>>;
+  onDropFiles: (files: File[]) => void;
 };
 
 export function EditorCanvas({
@@ -33,9 +34,26 @@ export function EditorCanvas({
   nodeRefs,
   stageRef,
   containerRef,
+  onDropFiles,
 }: EditorCanvasProps) {
+  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const files = Array.from(event.dataTransfer.files);
+    if (files.length > 0) {
+      onDropFiles(files);
+    }
+  };
+
   return (
-    <section className="canvas-wrap" ref={containerRef}>
+    <section
+      className="canvas-wrap"
+      ref={containerRef}
+      onDragOver={(event) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+      }}
+      onDrop={handleDrop}
+    >
       <Stage
         ref={stageRef}
         width={width}

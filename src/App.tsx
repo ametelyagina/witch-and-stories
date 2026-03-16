@@ -310,6 +310,17 @@ function App() {
     setPreset(nextPreset);
   };
 
+  const handleCanvasDrop = async (files: File[]) => {
+    const imageFiles = files.filter((file) => file.type.startsWith('image/'));
+    if (!imageFiles.length) {
+      return;
+    }
+
+    for (const file of imageFiles) {
+      await addImageLayer(file);
+    }
+  };
+
   const removeSelectedLayer = () => {
     if (!selectedLayerId) return;
     setLayers((prev) => prev.filter((layer) => layer.id !== selectedLayerId));
@@ -493,6 +504,7 @@ function App() {
           onSelectLayer={setSelectedLayerId}
           onDragEnd={handleDragEnd}
           onTransform={handleTransform}
+          onDropFiles={handleCanvasDrop}
           transformerRef={transformerRef}
           nodeRefs={nodeRefs}
         />
