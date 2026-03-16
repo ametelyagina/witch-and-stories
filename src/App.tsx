@@ -27,6 +27,7 @@ type UploadedFont = {
   id: string;
   name: string;
   family: string;
+  dataUrl?: string;
 };
 
 type BaseLayer = {
@@ -66,10 +67,14 @@ type TextLayer = BaseLayer & {
 };
 
 type Layer = ImageLayer | TextLayer;
+type PersistedImageLayer = Omit<ImageLayer, 'image'>;
+type PersistedLayer = PersistedImageLayer | TextLayer;
 
 const clamp = (value: number, min: number, max: number) => {
   return Math.min(max, Math.max(min, value));
 };
+
+const STORAGE_KEY = 'story-text-editor-state-v1';
 
 const loadImage = (src: string) => {
   return new Promise<HTMLImageElement>((resolve, reject) => {
@@ -77,6 +82,21 @@ const loadImage = (src: string) => {
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error('Ошибка загрузки изображения.'));
     img.src = src;
+  });
+};
+
+const readFileAsDataUrl = (file: File) => {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+      } else {
+        reject(new Error('Не удалось считать файл.'));
+      }
+    };
+    reader.onerror = () => reject(new Error('Ошибка чтения файла.'));
+    reader.readAsDataURL(file);
   });
 };
 
@@ -90,6 +110,7 @@ function App() {
     { id: 'default', name: 'System', family: 'Arial' },
   ]);
   const [stageScale, setStageScale] = useState(1);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   const stageRef = useRef<Konva.Stage | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -129,6 +150,246 @@ function App() {
   }, [stageSize.width, stageSize.height]);
 
   useEffect(() => {
+    const normalizeFont = (value: unknown): UploadedFont | null => {
+      if (!value || typeof value !== 'object') return null;
+      const font = value as { id?: string; name?: string; family?: string; dataUrl?: unknown };
+      if (typeof font.id !== 'string' || typeof font.name !== 'string' || typeof font.family !== 'string') {
+        return null;
+      }
+
+      const isCustomFont = font.id !== 'default';
+      if (isCustomFont && typeof font.dataUrl !== 'string') {
+        return null;
+      }
+
+      return {
+        id: font.id,
+        name: font.name,
+        family: font.family,
+        dataUrl: isCustomFont ? font.dataUrl : undefined,
+      };
+    };
+
+    const normalizeLayer = (value: unknown): PersistedLayer | null => {
+      if (!value || typeof value !== 'object') return null;
+      const layer = value as {
+        id?: string;
+        type?: string;
+        x?: number;
+        y?: number;
+        width?: number;
+        height?: number;
+        rotation?: number;
+      };
+
+      if (
+        typeof layer.id !== 'string' ||
+        (layer.type !== 'image' && layer.type !== 'text') ||
+        typeof layer.x !== 'number' ||
+        typeof layer.y !== 'number' ||
+        typeof layer.width !== 'number' ||
+        typeof layer.height !== 'number' ||
+        typeof layer.rotation !== 'number'
+      ) {
+        return null;
+      }
+
+      if (layer.type === 'text') {
+        const textLayer = value as {
+          text?: string;
+          fontFamily?: string;
+          fontSize?: number;
+          lineHeight?: number;
+          align?: 'left' | 'center' | 'right';
+          color?: string;
+        };
+        if (
+          typeof textLayer.text !== 'string' ||
+          typeof textLayer.fontFamily !== 'string' ||
+          typeof textLayer.fontSize !== 'number' ||
+          typeof textLayer.lineHeight !== 'number' ||
+          typeof textLayer.align !== 'string' ||
+          typeof textLayer.color !== 'string'
+        ) {
+          return null;
+        }
+
+        return {
+          id: layer.id,
+          type: 'text',
+          x: layer.x,
+          y: layer.y,
+          width: layer.width,
+          height: layer.height,
+          rotation: layer.rotation,
+          text: textLayer.text,
+          fontFamily: textLayer.fontFamily,
+          fontSize: textLayer.fontSize,
+          lineHeight: textLayer.lineHeight,
+          align: textLayer.align,
+          color: textLayer.color,
+        };
+      }
+
+      const imageLayer = value as {
+        src?: string;
+        naturalWidth?: number;
+        naturalHeight?: number;
+        crop?: ImageCrop;
+      };
+      if (
+        typeof imageLayer.src !== 'string' ||
+        typeof imageLayer.naturalWidth !== 'number' ||
+        typeof imageLayer.naturalHeight !== 'number'
+      ) {
+        return null;
+      }
+
+      if (!imageLayer.crop || typeof imageLayer.crop.x !== 'number' || typeof imageLayer.crop.y !== 'number' || typeof imageLayer.crop.width !== 'number' || typeof imageLayer.crop.height !== 'number') {
+        return null;
+      }
+
+      return {
+        id: layer.id,
+        type: 'image',
+        x: layer.x,
+        y: layer.y,
+        width: layer.width,
+        height: layer.height,
+        rotation: layer.rotation,
+        src: imageLayer.src,
+        naturalWidth: imageLayer.naturalWidth,
+        naturalHeight: imageLayer.naturalHeight,
+        crop: {
+          x: imageLayer.crop.x,
+          y: imageLayer.crop.y,
+          width: imageLayer.crop.width,
+          height: imageLayer.crop.height,
+        },
+      };
+    };
+
+    (async () => {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          setIsHydrated(true);
+          return;
+        }
+
+        const parsed = JSON.parse(raw) as {
+          preset?: Preset;
+          layers?: unknown[];
+          selectedLayerId?: unknown;
+          fonts?: unknown[];
+        };
+
+        const restoredPreset: Preset = parsed.preset === 'carousel' ? 'carousel' : 'story';
+        const baseFont: UploadedFont = { id: 'default', name: 'System', family: 'Arial' };
+        const restoredFonts = [
+          baseFont,
+          ...(Array.isArray(parsed.fonts)
+            ? parsed.fonts
+                .map(normalizeFont)
+                .filter((font): font is UploadedFont => Boolean(font) && font.id !== 'default')
+            : []),
+        ];
+
+        const fontFamilies = new Set(restoredFonts.map((font) => font.family));
+        await Promise.all(
+          restoredFonts.map(async (font) => {
+            if (!font.dataUrl) return;
+            try {
+              const fontResponse = await fetch(font.dataUrl);
+              const fontBuffer = await fontResponse.arrayBuffer();
+              const loadedFont = new FontFace(font.family, fontBuffer);
+              await loadedFont.load();
+              document.fonts.add(loadedFont);
+            } catch {
+              // skip invalid font payload
+            }
+          }),
+        );
+
+        const parsedLayers = Array.isArray(parsed.layers)
+          ? (parsed.layers as unknown[]).map(normalizeLayer).filter(Boolean)
+            : [];
+        const restoredLayers = await Promise.all(
+          parsedLayers.map(async (layer) => {
+            if (layer.type === 'text') {
+              return layer;
+            }
+
+            if (!layer.src.startsWith('data:')) {
+              return null;
+            }
+
+            try {
+              const image = await loadImage(layer.src);
+              return {
+                ...layer,
+                image,
+              } as ImageLayer;
+            } catch {
+              return null;
+            }
+          }),
+        );
+
+        const normalizedLayers = restoredLayers.filter((layer): layer is Layer =>
+          layer !== null && (layer.type !== 'image' || (layer.image.naturalWidth > 0)),
+        );
+        const normalized = normalizedLayers.map((layer) =>
+          layer.type === 'text' ? {
+            ...layer,
+            fontFamily: fontFamilies.has(layer.fontFamily) ? layer.fontFamily : baseFont.family,
+          } : layer,
+        );
+
+        const nextSelectedLayerId = typeof parsed.selectedLayerId === 'string'
+          ? parsed.selectedLayerId
+          : null;
+
+        const hasSelectedLayer = normalized.some((layer) => layer.id === nextSelectedLayerId);
+
+        setPreset(restoredPreset);
+        setFonts(restoredFonts);
+        setLayers(normalized);
+        setSelectedLayerId(hasSelectedLayer ? nextSelectedLayerId : null);
+      } catch {
+        // ignore corrupted state
+      } finally {
+        setIsHydrated(true);
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    const serializableLayers = layers.map((layer) => {
+      if (layer.type === 'image') {
+        const { image, ...rest } = layer;
+        return rest;
+      }
+
+      return layer;
+    });
+
+    const payload = {
+      preset,
+      selectedLayerId,
+      fonts,
+      layers: serializableLayers,
+    };
+
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+      // storage unavailable or too large
+    }
+  }, [isHydrated, preset, selectedLayerId, layers, fonts]);
+
+  useEffect(() => {
     const transformer = transformerRef.current;
     const node = selectedLayerId ? nodeRefs.current[selectedLayerId] : null;
 
@@ -158,8 +419,8 @@ function App() {
   };
 
   const addImageLayer = async (file: File) => {
-    const objectUrl = URL.createObjectURL(file);
-    const image = await loadImage(objectUrl);
+    const dataUrl = await readFileAsDataUrl(file);
+    const image = await loadImage(dataUrl);
     const fitScale = Math.max(
       stageSize.width / image.width,
       stageSize.height / image.height,
@@ -168,7 +429,7 @@ function App() {
     const layer: ImageLayer = {
       id: nanoid(),
       type: 'image',
-      src: objectUrl,
+      src: dataUrl,
       image,
       naturalWidth: image.width,
       naturalHeight: image.height,
@@ -252,12 +513,13 @@ function App() {
     }
 
     const buffer = await file.arrayBuffer();
+    const dataUrl = await readFileAsDataUrl(file);
     const family = `custom-${nanoid()}`;
     const font = new FontFace(family, buffer);
     await font.load();
     document.fonts.add(font);
 
-    setFonts((prev) => [...prev, { id: family, name: file.name, family }]);
+    setFonts((prev) => [...prev, { id: family, name: file.name, family, dataUrl }]);
     event.target.value = '';
   };
 
