@@ -327,6 +327,29 @@ function App() {
     setSelectedLayerId(null);
   };
 
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null) => {
+      return (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        (target instanceof HTMLElement && target.isContentEditable)
+      );
+    };
+
+    const handleDeleteFromKeyboard = (event: KeyboardEvent) => {
+      if (!(event.key === 'Backspace' || event.key === 'Delete')) return;
+      if (!selectedLayerId) return;
+      if (isTypingTarget(event.target)) return;
+
+      event.preventDefault();
+      removeSelectedLayer();
+    };
+
+    window.addEventListener('keydown', handleDeleteFromKeyboard);
+    return () => window.removeEventListener('keydown', handleDeleteFromKeyboard);
+  }, [removeSelectedLayer, selectedLayerId]);
+
   const addTextToSelectionOrNewLayer = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -343,55 +366,6 @@ function App() {
     const insertedAsImage = await addImageFromText(text);
     if (insertedAsImage) return;
     await addTextToSelectionOrNewLayer(text);
-  };
-
-  const parseClipboardItemsForImage = async (items: ClipboardItem[]) => {
-    for (const item of items) {
-      const imageType = item.types.find((type) => type.startsWith('image/'));
-      if (imageType) {
-        const blob = await item.getType(imageType);
-        await addImageFromBlob(blob);
-        return true;
-      }
-
-      const htmlType = item.types.find((type) => type === 'text/html');
-      if (htmlType) {
-        const htmlBlob = await item.getType(htmlType);
-        const html = await htmlBlob.text();
-        const imageFromTag = /<img[^>]+src=["']([^"']+)["'][^>]*>/i.exec(html)?.[1];
-        if (imageFromTag && (await addImageFromText(imageFromTag))) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  };
-
-  const handlePaste = async () => {
-    try {
-      if (!navigator.clipboard || !navigator.clipboard.read) {
-        const plainText = await navigator.clipboard.readText();
-        if (plainText) {
-          await parseClipboardTextAsImage(plainText);
-        }
-        return;
-      }
-
-      const clipboardItems = await navigator.clipboard.read();
-      const imageInserted = await parseClipboardItemsForImage(clipboardItems);
-      if (imageInserted) return;
-
-      const itemText = await navigator.clipboard.readText();
-      if (itemText) {
-        await parseClipboardTextAsImage(itemText);
-        return;
-      }
-
-      alert('В буфере обмена нет данных для вставки.');
-    } catch {
-      alert('Не удалось прочитать буфер обмена. Проверьте разрешения и попробуйте снова.');
-    }
   };
 
   useEffect(() => {
@@ -484,7 +458,6 @@ function App() {
         onUploadImage={() => imageInputRef.current?.click()}
         onAddText={addTextLayer}
         onUploadFont={() => fontInputRef.current?.click()}
-        onPaste={handlePaste}
         onDeleteSelected={removeSelectedLayer}
         onExport={handleExport}
         isExportDisabled={layers.length === 0}
