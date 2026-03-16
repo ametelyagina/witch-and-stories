@@ -1,6 +1,7 @@
 import { CSSProperties, useEffect, useRef } from 'react';
 
 import { Layer, TextLayer } from '../editor/types';
+import { FontOption } from '../editor/textPresets';
 import { Stage, Layer as KonvaLayer, Text, Transformer, Image as KonvaImage } from 'react-konva';
 import Konva from 'konva';
 import { DragEvent, MutableRefObject, RefObject } from 'react';
@@ -22,9 +23,11 @@ type EditorCanvasProps = {
   scale: number;
   selectedLayer: Layer | null;
   isCompactPreview: boolean;
+  isFullscreenCanvas: boolean;
   dragArmedImageId: string | null;
   isTextToolsOpen: boolean;
   editingTextLayerId: string | null;
+  fontOptions: FontOption[];
   onCanvasMouseDown: (event: Konva.KonvaEventObject<MouseEvent>) => void;
   onSelectLayer: (id: string) => void;
   onTapImageLayer: (id: string) => void;
@@ -33,6 +36,7 @@ type EditorCanvasProps = {
   onQuickTextStyleChange: (changes: {
     fontSize?: number;
     lineHeight?: number;
+    fontFamily?: string;
     color?: string;
   }) => void;
   onDeleteSelected: () => void;
@@ -53,9 +57,11 @@ export function EditorCanvas({
   scale,
   selectedLayer,
   isCompactPreview,
+  isFullscreenCanvas,
   dragArmedImageId,
   isTextToolsOpen,
   editingTextLayerId,
+  fontOptions,
   onCanvasMouseDown,
   onSelectLayer,
   onTapImageLayer,
@@ -106,15 +112,15 @@ export function EditorCanvas({
   let inlineEditorStyle: CSSProperties | undefined;
 
   if (selectedTextLayer) {
-    const toolbarWidth = 92;
-    const popoverWidth = Math.min(248, frameWidth - 16);
+    const toolbarWidth = 72;
+    const popoverWidth = Math.min(228, frameWidth - 12);
     const toolbarLeft = clampToFrame(
       (selectedTextLayer.x + selectedTextLayer.width) * scale - toolbarWidth,
       8,
       Math.max(8, frameWidth - toolbarWidth - 8),
     );
     const toolbarTop = clampToFrame(
-      selectedTextLayer.y * scale - 48,
+      selectedTextLayer.y * scale - 40,
       8,
       Math.max(8, frameHeight - 44),
     );
@@ -298,7 +304,7 @@ export function EditorCanvas({
             </div>
           </div>
 
-          {selectedTextLayer && selectionToolbarStyle ? (
+          {selectedTextLayer && selectionToolbarStyle && !isEditingSelectedText ? (
             <>
               <div className="text-selection-toolbar" style={selectionToolbarStyle}>
                 <button
@@ -330,37 +336,81 @@ export function EditorCanvas({
                   </button>
 
                   <label className="text-selection-field">
-                    <span>Размер</span>
-                    <strong>{selectedTextLayer.fontSize}px</strong>
-                    <input
-                      type="range"
-                      min="14"
-                      max="220"
-                      value={selectedTextLayer.fontSize}
+                    <span>Шрифт</span>
+                    <select
+                      value={selectedTextLayer.fontFamily}
+                      className="text-selection-select"
                       onChange={(event) =>
                         onQuickTextStyleChange({
-                          fontSize: Number(event.target.value),
+                          fontFamily: event.target.value,
                         })
                       }
-                    />
+                    >
+                      {fontOptions.map((font) => (
+                        <option key={font.id} value={font.family}>
+                          {font.name}
+                        </option>
+                      ))}
+                    </select>
                   </label>
 
-                  <label className="text-selection-field">
+                  <div className="text-selection-field">
+                    <span>Размер</span>
+                    <div className="text-selection-stepper">
+                      <button
+                        type="button"
+                        className="ghost text-selection-stepper-button"
+                        onClick={() =>
+                          onQuickTextStyleChange({
+                            fontSize: Math.max(14, selectedTextLayer.fontSize - 4),
+                          })
+                        }
+                      >
+                        A-
+                      </button>
+                      <strong>{selectedTextLayer.fontSize}px</strong>
+                      <button
+                        type="button"
+                        className="ghost text-selection-stepper-button"
+                        onClick={() =>
+                          onQuickTextStyleChange({
+                            fontSize: Math.min(220, selectedTextLayer.fontSize + 4),
+                          })
+                        }
+                      >
+                        A+
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="text-selection-field">
                     <span>Интервал</span>
-                    <strong>{selectedTextLayer.lineHeight.toFixed(2)}</strong>
-                    <input
-                      type="range"
-                      min="0.8"
-                      max="2.4"
-                      step="0.05"
-                      value={selectedTextLayer.lineHeight}
-                      onChange={(event) =>
-                        onQuickTextStyleChange({
-                          lineHeight: Number(event.target.value),
-                        })
-                      }
-                    />
-                  </label>
+                    <div className="text-selection-stepper">
+                      <button
+                        type="button"
+                        className="ghost text-selection-stepper-button"
+                        onClick={() =>
+                          onQuickTextStyleChange({
+                            lineHeight: Math.max(0.8, Number((selectedTextLayer.lineHeight - 0.05).toFixed(2))),
+                          })
+                        }
+                      >
+                        L-
+                      </button>
+                      <strong>{selectedTextLayer.lineHeight.toFixed(2)}</strong>
+                      <button
+                        type="button"
+                        className="ghost text-selection-stepper-button"
+                        onClick={() =>
+                          onQuickTextStyleChange({
+                            lineHeight: Math.min(2.4, Number((selectedTextLayer.lineHeight + 0.05).toFixed(2))),
+                          })
+                        }
+                      >
+                        L+
+                      </button>
+                    </div>
+                  </div>
 
                   <label className="text-selection-field text-selection-field--color">
                     <span>Цвет</span>
@@ -419,7 +469,7 @@ export function EditorCanvas({
           ) : null}
         </div>
 
-        {!isCompactPreview ? (
+        {!isCompactPreview && !isFullscreenCanvas ? (
           <p className="hint">
             {layers.length === 0
               ? `Пустая канва ${width} x ${height}. Перетащите фото сюда, вставьте из буфера или нажмите “Загрузить фото”.`

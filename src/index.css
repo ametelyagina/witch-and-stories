@@ -394,12 +394,12 @@ canvas {
 
 .text-selection-toolbar {
   display: flex;
-  gap: 8px;
+  gap: 4px;
 }
 
 .text-selection-button {
-  width: 42px;
-  height: 42px;
+  width: 30px;
+  height: 30px;
   border-radius: 999px;
   padding: 0;
   display: grid;
@@ -407,8 +407,8 @@ canvas {
   background: rgb(255 248 240 / 96%);
   color: var(--ink);
   border: 1px solid rgb(197 176 153 / 72%);
-  box-shadow: 0 10px 22px rgb(36 29 23 / 12%);
-  font-size: 16px;
+  box-shadow: 0 8px 18px rgb(36 29 23 / 11%);
+  font-size: 11px;
   font-weight: 800;
 }
 
@@ -424,29 +424,56 @@ canvas {
 
 .text-selection-popover {
   display: grid;
-  gap: 10px;
-  padding: 12px;
-  border-radius: 18px;
+  gap: 7px;
+  padding: 9px;
+  border-radius: 14px;
   border: 1px solid rgb(197 176 153 / 70%);
   background: rgb(255 248 240 / 96%);
-  box-shadow: 0 16px 34px rgb(36 29 23 / 14%);
+  box-shadow: 0 14px 28px rgb(36 29 23 / 13%);
 }
 
 .text-selection-edit-button {
-  min-height: 42px;
-  border-radius: 14px;
+  min-height: 34px;
+  border-radius: 11px;
+  font-size: 11px;
 }
 
 .text-selection-field {
   display: grid;
-  gap: 6px;
+  gap: 5px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .text-selection-field strong {
   color: var(--accent-deep);
-  font-size: 12px;
+  font-size: 11px;
+}
+
+.text-selection-stepper {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 38px;
+  align-items: center;
+  gap: 6px;
+}
+
+.text-selection-stepper strong {
+  text-align: center;
+}
+
+.text-selection-stepper-button {
+  min-height: 30px;
+  padding: 5px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.text-selection-select {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 9px;
+  border-radius: 10px;
 }
 
 .text-selection-field--color {
@@ -455,7 +482,7 @@ canvas {
 }
 
 .text-selection-field--color input[type='color'] {
-  height: 40px;
+  height: 34px;
 }
 
 .text-inline-editor {
@@ -999,7 +1026,7 @@ canvas {
   }
 
   .text-selection-popover {
-    width: min(240px, calc(100vw - 28px)) !important;
+    width: min(220px, calc(100vw - 20px)) !important;
   }
 
   .text-inline-editor {
@@ -1010,23 +1037,21 @@ canvas {
     position: fixed;
     inset: 0;
     z-index: 55;
-    padding: 14px;
-    background:
-      radial-gradient(circle at top, rgb(242 198 162 / 32%), transparent 28%),
-      linear-gradient(180deg, rgb(247 241 231 / 98%), rgb(240 229 214 / 98%));
-    overflow: auto;
-    align-content: start;
+    padding: 0;
+    background: #17120f;
+    overflow: hidden;
+    align-content: stretch;
     justify-items: center;
   }
 
   .canvas-column--expanded .canvas-toolbar {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    width: 100%;
-    max-width: 520px;
-    padding-bottom: 8px;
-    background: linear-gradient(180deg, rgb(247 241 231 / 98%), rgb(247 241 231 / 92%) 78%, transparent);
+    position: fixed;
+    top: 14px;
+    right: 14px;
+    z-index: 8;
+    width: auto;
+    max-width: none;
+    justify-items: end;
   }
 
   .canvas-column--expanded .canvas-shell,
@@ -1035,13 +1060,43 @@ canvas {
     width: 100%;
   }
 
+  .canvas-column--expanded .canvas-shell {
+    min-height: 100dvh;
+    align-items: center;
+    overflow: hidden;
+  }
+
   .canvas-column--expanded .canvas-wrap {
-    max-width: 520px;
-    padding: 16px 12px;
-    border-radius: 24px;
-    border: 1px solid rgb(197 176 153 / 56%);
-    background: rgb(255 248 240 / 84%);
-    box-shadow: var(--shadow);
+    max-width: none;
+    height: 100dvh;
+    padding: 0;
+    border-radius: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    align-content: center;
+    overflow: hidden;
+  }
+
+  .canvas-column--expanded .canvas-stage,
+  .canvas-column--expanded .canvas-stage-frame {
+    max-width: 100vw;
+    max-height: 100dvh;
+  }
+
+  .canvas-column--expanded .canvas-stage {
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .canvas-column--expanded canvas {
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .canvas-column--expanded .canvas-expand-button {
+    min-width: 108px;
+    box-shadow: 0 12px 24px rgb(0 0 0 / 28%);
   }
 
   .action-rail {

@@ -15,7 +15,7 @@ import {
   Preset,
   PRESETS,
 } from './editor/types';
-import { DEFAULT_TEXT_STYLE_PRESET_ID, getTextStylePresetById } from './editor/textPresets';
+import { DEFAULT_TEXT_STYLE_PRESET_ID, getFontOptions, getTextStylePresetById } from './editor/textPresets';
 import { readFileAsDataUrl, loadImage } from './utils/media';
 import { clamp } from './utils/math';
 import { readState, saveState } from './utils/storage';
@@ -59,6 +59,7 @@ function App() {
     [layers, selectedLayerId],
   );
   const isPhoneViewport = viewport.width <= 720;
+  const fontOptions = useMemo(() => getFontOptions(fonts), [fonts]);
 
   useEffect(() => {
     const resize = () => {
@@ -76,19 +77,27 @@ function App() {
       if (!wrapper) return;
 
       const wrapperBounds = wrapper.getBoundingClientRect();
-      const availableWidth = Math.max(280, wrapper.clientWidth - 24);
       const isStackedWorkbench = nextViewport.width <= 1120;
+      let availableWidth = Math.max(280, wrapper.clientWidth - 24);
       let availableHeight = isStackedWorkbench
         ? stageSize.height
         : Math.max(220, nextViewport.height - wrapperBounds.top - 44);
 
       if (nextViewport.width <= 720) {
-        availableHeight = isCanvasExpanded
-          ? Math.max(320, nextViewport.height - wrapperBounds.top - 24)
-          : Math.max(240, Math.min(nextViewport.height * 0.4, 320));
+        if (isCanvasExpanded) {
+          availableWidth = Math.max(280, nextViewport.width - 6);
+          availableHeight = Math.max(320, nextViewport.height - 6);
+        } else {
+          availableHeight = Math.max(240, Math.min(nextViewport.height * 0.4, 320));
+        }
       }
 
-      const scale = Math.min(availableWidth / stageSize.width, availableHeight / stageSize.height, 1);
+      const widthScale = availableWidth / stageSize.width;
+      const heightScale = availableHeight / stageSize.height;
+      const scale =
+        nextViewport.width <= 720 && isCanvasExpanded
+          ? Math.max(widthScale, heightScale)
+          : Math.min(widthScale, heightScale, 1);
       setStageScale(Math.max(0.15, scale));
     };
 
@@ -240,6 +249,7 @@ function App() {
   const handleQuickTextStyleChange = (changes: {
     fontSize?: number;
     lineHeight?: number;
+    fontFamily?: string;
     color?: string;
   }) => {
     if (selectedLayer?.type !== 'text') {
@@ -713,18 +723,20 @@ function App() {
           }`}
         >
           <div className="canvas-toolbar">
-            <div className="preset-strip" aria-label="Canvas presets">
-              {PRESETS.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  className={preset === item.key ? 'active' : 'ghost'}
-                  onClick={() => handlePresetChange(item.key)}
-                >
-                  {item.key === 'story' ? '9:16' : '4:5'}
-                </button>
-              ))}
-            </div>
+            {!isCanvasExpanded ? (
+              <div className="preset-strip" aria-label="Canvas presets">
+                {PRESETS.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    className={preset === item.key ? 'active' : 'ghost'}
+                    onClick={() => handlePresetChange(item.key)}
+                  >
+                    {item.key === 'story' ? '9:16' : '4:5'}
+                  </button>
+                ))}
+              </div>
+            ) : null}
 
             {isPhoneViewport ? (
               <button
@@ -746,9 +758,11 @@ function App() {
             scale={stageScale}
             selectedLayer={selectedLayer}
             isCompactPreview={isPhoneViewport && !isCanvasExpanded}
+            isFullscreenCanvas={isPhoneViewport && isCanvasExpanded}
             dragArmedImageId={dragArmedImageId}
             isTextToolsOpen={isTextToolsOpen}
             editingTextLayerId={editingTextLayerId}
+            fontOptions={fontOptions}
             onCanvasMouseDown={handleCanvasMouseDown}
             onSelectLayer={handleSelectLayer}
             onTapImageLayer={handleTapImageLayer}
