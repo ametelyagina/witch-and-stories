@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { ImageCrop, Layer, TextLayer, UploadedFont } from '../editor/types';
+import { DEFAULT_TEXT_BACKGROUND_COLOR } from '../editor/textHighlight';
 import { getFontOptions, getTextStylePresetById, TEXT_STYLE_PRESETS } from '../editor/textPresets';
 
 function isTextLayer(layer: Layer): layer is TextLayer {
@@ -340,6 +341,44 @@ export function PropertiesPanel({
                         <option value="center">По центру</option>
                         <option value="right">Справа</option>
                       </select>
+                    </div>
+                  </div>
+
+                  <div className="field-row">
+                    <div className="field">
+                      <div className="field-head">
+                        <label>Фон текста</label>
+                        <span>{selectedLayer.backgroundEnabled ? 'Вкл' : 'Выкл'}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className={selectedLayer.backgroundEnabled ? 'active' : 'ghost'}
+                        onClick={() =>
+                          applyTextChanges(selectedLayer, {
+                            backgroundEnabled: !selectedLayer.backgroundEnabled,
+                            backgroundColor:
+                              selectedLayer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
+                          })
+                        }
+                      >
+                        {selectedLayer.backgroundEnabled ? 'Убрать плашку' : 'Добавить плашку'}
+                      </button>
+                    </div>
+
+                    <div className="field field-compact">
+                      <div className="field-head">
+                        <label>Цвет плашки</label>
+                      </div>
+                      <input
+                        type="color"
+                        disabled={!selectedLayer.backgroundEnabled}
+                        value={selectedLayer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR}
+                        onChange={(event) =>
+                          applyTextChanges(selectedLayer, {
+                            backgroundColor: event.target.value,
+                          })
+                        }
+                      />
                     </div>
                   </div>
                 </div>

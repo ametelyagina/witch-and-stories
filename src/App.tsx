@@ -15,6 +15,7 @@ import {
   Preset,
   PRESETS,
 } from './editor/types';
+import { DEFAULT_TEXT_BACKGROUND_COLOR } from './editor/textHighlight';
 import { DEFAULT_TEXT_STYLE_PRESET_ID, getFontOptions, getTextStylePresetById } from './editor/textPresets';
 import { readFileAsDataUrl, loadImage } from './utils/media';
 import { clamp } from './utils/math';
@@ -23,6 +24,8 @@ import { readState, saveState } from './utils/storage';
 function getPresetByKey(preset: Preset) {
   return PRESETS.find((item) => item.key === preset)!;
 }
+
+type ClipboardImageMode = 'background' | 'overlay';
 
 function App() {
   const [preset, setPreset] = useState<Preset>('story');
@@ -251,6 +254,9 @@ function App() {
     lineHeight?: number;
     fontFamily?: string;
     color?: string;
+    align?: 'left' | 'center' | 'right';
+    backgroundEnabled?: boolean;
+    backgroundColor?: string;
   }) => {
     if (selectedLayer?.type !== 'text') {
       return;
@@ -278,17 +284,72 @@ function App() {
     });
   };
 
-  const addImageFromBlob = async (blob: Blob) => {
-    const imageDataUrl = await readBlobAsDataUrl(blob);
-    await addImageLayerFromDataUrl(imageDataUrl);
+  const createImageLayer = (
+    image: HTMLImageElement,
+    dataUrl: string,
+    placement: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      crop?: ImageCrop;
+    },
+  ) => {
+    return {
+      id: nanoid(),
+      type: 'image',
+      src: dataUrl,
+      image,
+      naturalWidth: image.width,
+      naturalHeight: image.height,
+      x: placement.x,
+      y: placement.y,
+      width: placement.width,
+      height: placement.height,
+      rotation: 0,
+      crop: placement.crop || {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+      },
+    } as Layer;
   };
 
-  const addImageFromText = async (text: string) => {
+  const insertOverlayImageLayer = async (image: HTMLImageElement, dataUrl: string) => {
+    const maxWidth = stageSize.width * 0.42;
+    const maxHeight = stageSize.height * 0.42;
+    const scale = Math.min(maxWidth / image.width, maxHeight / image.height, 1);
+    const width = Math.max(72, image.width * scale);
+    const height = Math.max(72, image.height * scale);
+    const layer = createImageLayer(image, dataUrl, {
+      x: (stageSize.width - width) / 2,
+      y: (stageSize.height - height) / 2,
+      width,
+      height,
+    });
+
+    setLayers((prev) => [...prev, layer]);
+    setSelectedLayerId(layer.id);
+    setEditingTextLayerId(null);
+    setIsTextToolsOpen(false);
+    setDragArmedImageId(null);
+  };
+
+  const addImageFromBlob = async (blob: Blob, mode: ClipboardImageMode = 'background') => {
+    const imageDataUrl = await readBlobAsDataUrl(blob);
+    await addImageLayerFromDataUrl(imageDataUrl, mode);
+  };
+
+  const addImageFromText = async (
+    text: string,
+    mode: ClipboardImageMode = 'background',
+  ) => {
     const trimmed = text.trim();
     if (!trimmed) return false;
 
     if (trimmed.startsWith('data:image/')) {
-      await addImageLayerFromDataUrl(trimmed);
+      await addImageLayerFromDataUrl(trimmed, mode);
       return true;
     }
 
@@ -300,7 +361,7 @@ function App() {
     const blob = await response.blob();
     if (!blob.type.startsWith('image/')) return false;
 
-    await addImageFromBlob(blob);
+    await addImageFromBlob(blob, mode);
     return true;
   };
 
@@ -333,20 +394,13 @@ function App() {
       x = (target.width - width) / 2;
       y = (target.height - height) / 2;
     }
-    const layer: Layer = {
-      id: nanoid(),
-      type: 'image',
-      src: dataUrl,
-      image,
-      naturalWidth: image.width,
-      naturalHeight: image.height,
+    const layer = createImageLayer(image, dataUrl, {
       x,
       y,
       width,
       height,
-      rotation: 0,
       crop,
-    } as Layer;
+    });
 
     setLayers((prev) => [...prev, layer]);
     setSelectedLayerId(layer.id);
@@ -355,10 +409,17 @@ function App() {
     setDragArmedImageId(null);
   };
 
-  const addImageLayerFromDataUrl = async (dataUrl: string) => {
-    if (pendingImage) return;
-
+  const addImageLayerFromDataUrl = async (
+    dataUrl: string,
+    mode: ClipboardImageMode = 'background',
+  ) => {
     const image = await loadImage(dataUrl);
+    if (mode === 'overlay') {
+      await insertOverlayImageLayer(image, dataUrl);
+      return;
+    }
+
+    if (pendingImage) return;
     setPendingImage({ dataUrl, image });
   };
 
@@ -403,6 +464,8 @@ function App() {
       lineHeight: defaultTextPreset?.lineHeight ?? 1.2,
       align: defaultTextPreset?.align ?? 'left',
       color: defaultTextPreset?.color ?? '#241d17',
+      backgroundEnabled: false,
+      backgroundColor: DEFAULT_TEXT_BACKGROUND_COLOR,
       stylePresetId: defaultTextPreset?.id,
       x: stageSize.width * 0.08,
       y: stageSize.height * 0.12,
@@ -595,10 +658,91 @@ function App() {
     addTextLayer(trimmed);
   };
 
-  const parseClipboardTextAsImage = async (text: string) => {
-    const insertedAsImage = await addImageFromText(text);
+  const parseClipboardTextAsImage = async (
+    text: string,
+    mode: ClipboardImageMode = 'background',
+  ) => {
+    const insertedAsImage = await addImageFromText(text, mode);
     if (insertedAsImage) return;
     await addTextToSelectionOrNewLayer(text);
+  };
+
+  const parseClipboardHtmlAsImage = async (
+    html: string,
+    mode: ClipboardImageMode = 'background',
+  ) => {
+    const imageFromTag = /<img[^>]+src=["']([^"']+)["'][^>]*>/i.exec(html)?.[1];
+    if (!imageFromTag) {
+      return false;
+    }
+
+    return addImageFromText(imageFromTag, mode);
+  };
+
+  const handlePasteFromClipboard = async () => {
+    if (pendingImage) return;
+
+    if (!window.isSecureContext) {
+      alert('Кнопка “Вставить” работает только в защищённом режиме HTTPS или на localhost.');
+      return;
+    }
+
+    if (!navigator.clipboard) {
+      alert('Этот браузер не даёт доступ к буферу обмена. Попробуйте системную вставку или Safari.');
+      return;
+    }
+
+    try {
+      if (typeof navigator.clipboard.read === 'function') {
+        const items = await navigator.clipboard.read();
+
+        for (const item of items) {
+          const imageType = item.types.find((type) => type.startsWith('image/'));
+          if (imageType) {
+            const blob = await item.getType(imageType);
+            await addImageFromBlob(blob, 'overlay');
+            return;
+          }
+
+          if (item.types.includes('text/html')) {
+            const html = await (await item.getType('text/html')).text();
+            if (await parseClipboardHtmlAsImage(html, 'overlay')) {
+              return;
+            }
+          }
+
+          if (item.types.includes('text/plain')) {
+            const text = await (await item.getType('text/plain')).text();
+            if (text.trim()) {
+              await parseClipboardTextAsImage(text, 'overlay');
+              return;
+            }
+          }
+        }
+      }
+
+      if (typeof navigator.clipboard.readText === 'function') {
+        const text = await navigator.clipboard.readText();
+        if (text.trim()) {
+          await parseClipboardTextAsImage(text, 'overlay');
+          return;
+        }
+      }
+
+      alert('В буфере не нашлось картинки, стикера или текста для вставки.');
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : '';
+      if (
+        message.includes('notallowed') ||
+        message.includes('permission') ||
+        message.includes('denied')
+      ) {
+        alert('Safari не дал доступ к буферу. Нажмите “Вставить” ещё раз и подтвердите системную вставку.');
+        return;
+      }
+
+      alert('Не удалось прочитать буфер обмена.');
+    }
   };
 
   useEffect(() => {
@@ -632,12 +776,11 @@ function App() {
 
       const html = data.getData('text/html');
       if (html) {
-        const imageFromTag = /<img[^>]+src=["']([^"']+)["'][^>]*>/i.exec(html)?.[1];
-        if (imageFromTag) {
+        if (
+          await parseClipboardHtmlAsImage(html)
+        ) {
           event.preventDefault();
-          if (await addImageFromText(imageFromTag)) {
-            return;
-          }
+          return;
         }
       }
 
@@ -653,6 +796,7 @@ function App() {
   }, [
     addImageFromBlob,
     addImageFromText,
+    parseClipboardHtmlAsImage,
     parseClipboardTextAsImage,
   ]);
 
@@ -709,6 +853,7 @@ function App() {
 
         <ActionRail
           onUploadImage={() => imageInputRef.current?.click()}
+          onPaste={handlePasteFromClipboard}
           onAddText={addTextLayer}
           onUploadFont={() => fontInputRef.current?.click()}
           onDeleteSelected={removeSelectedLayer}

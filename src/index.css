@@ -450,6 +450,52 @@ canvas {
   font-size: 11px;
 }
 
+.text-selection-align-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.text-selection-align-button {
+  min-height: 30px;
+  padding: 5px 6px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.text-selection-align-button--active {
+  background: linear-gradient(135deg, var(--accent), #eb8a5a);
+  color: #fff8f0;
+  border-color: transparent;
+}
+
+.text-selection-highlight-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 52px;
+  align-items: center;
+  gap: 8px;
+}
+
+.text-selection-highlight-button {
+  min-height: 30px;
+  padding: 5px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.text-selection-highlight-button--active {
+  background: linear-gradient(135deg, var(--accent), #eb8a5a);
+  color: #fff8f0;
+  border-color: transparent;
+}
+
+.text-selection-highlight-row input[type='color'] {
+  height: 30px;
+  padding: 2px;
+}
+
 .text-selection-stepper {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr) 38px;

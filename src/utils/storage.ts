@@ -8,6 +8,7 @@ import {
   UploadedFont,
 } from '../editor/types';
 import { isBuiltInFontFamily } from '../editor/textPresets';
+import { DEFAULT_TEXT_BACKGROUND_COLOR } from '../editor/textHighlight';
 import { loadImage } from './media';
 
 type PersistedEnvelope = {
@@ -110,6 +111,8 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
       lineHeight?: unknown;
       align?: unknown;
       color?: unknown;
+      backgroundEnabled?: unknown;
+      backgroundColor?: unknown;
       stylePresetId?: unknown;
     };
 
@@ -126,6 +129,8 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
       typeof textLayer.lineHeight !== 'number' ||
       (textLayer.align !== 'left' && textLayer.align !== 'center' && textLayer.align !== 'right') ||
       typeof textLayer.color !== 'string' ||
+      (textLayer.backgroundEnabled !== undefined && typeof textLayer.backgroundEnabled !== 'boolean') ||
+      (textLayer.backgroundColor !== undefined && typeof textLayer.backgroundColor !== 'string') ||
       (textLayer.stylePresetId !== undefined && typeof textLayer.stylePresetId !== 'string')
     ) {
       return null;
@@ -147,6 +152,8 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
       lineHeight: textLayer.lineHeight,
       align: textLayer.align,
       color: textLayer.color,
+      backgroundEnabled: textLayer.backgroundEnabled ?? false,
+      backgroundColor: textLayer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
       stylePresetId: textLayer.stylePresetId,
     };
   }

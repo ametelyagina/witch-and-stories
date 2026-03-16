@@ -1,8 +1,9 @@
 import { CSSProperties, useEffect, useRef } from 'react';
 
-import { Layer, TextLayer } from '../editor/types';
+import { Layer, TextAlign, TextLayer } from '../editor/types';
+import { buildTextHighlightRects, DEFAULT_TEXT_BACKGROUND_COLOR } from '../editor/textHighlight';
 import { FontOption } from '../editor/textPresets';
-import { Stage, Layer as KonvaLayer, Text, Transformer, Image as KonvaImage } from 'react-konva';
+import { Stage, Layer as KonvaLayer, Text, Transformer, Image as KonvaImage, Group, Rect } from 'react-konva';
 import Konva from 'konva';
 import { DragEvent, MutableRefObject, RefObject } from 'react';
 
@@ -38,6 +39,9 @@ type EditorCanvasProps = {
     lineHeight?: number;
     fontFamily?: string;
     color?: string;
+    align?: TextAlign;
+    backgroundEnabled?: boolean;
+    backgroundColor?: string;
   }) => void;
   onDeleteSelected: () => void;
   onStartEditingText: (id: string) => void;
@@ -110,30 +114,49 @@ export function EditorCanvas({
   let selectionToolbarStyle: CSSProperties | undefined;
   let selectionPopoverStyle: CSSProperties | undefined;
   let inlineEditorStyle: CSSProperties | undefined;
+  const estimatedPopoverHeight = 388;
 
   if (selectedTextLayer) {
     const toolbarWidth = 72;
     const popoverWidth = Math.min(228, frameWidth - 12);
+    const selectionTop = selectedTextLayer.y * scale;
+    const selectionRight = (selectedTextLayer.x + selectedTextLayer.width) * scale;
+    const selectionBottom = (selectedTextLayer.y + selectedTextLayer.height) * scale;
     const toolbarLeft = clampToFrame(
-      (selectedTextLayer.x + selectedTextLayer.width) * scale - toolbarWidth,
+      selectionRight - toolbarWidth,
       8,
       Math.max(8, frameWidth - toolbarWidth - 8),
     );
     const toolbarTop = clampToFrame(
-      selectedTextLayer.y * scale - 40,
+      selectionTop - 40,
       8,
       Math.max(8, frameHeight - 44),
     );
     const popoverLeft = clampToFrame(
-      (selectedTextLayer.x + selectedTextLayer.width) * scale - popoverWidth,
+      selectionRight - popoverWidth,
       8,
       Math.max(8, frameWidth - popoverWidth - 8),
     );
-    const popoverTop = clampToFrame(
-      toolbarTop + 44,
-      8,
-      Math.max(8, frameHeight - 190),
-    );
+    const popoverBelowTop = selectionBottom + 12;
+    const popoverAboveTop = selectionTop - estimatedPopoverHeight - 12;
+    const minPopoverTop = 8;
+    const maxPopoverTop = Math.max(8, frameHeight - estimatedPopoverHeight - 8);
+    const canPlaceBelow = popoverBelowTop + estimatedPopoverHeight <= frameHeight - 8;
+    const canPlaceAbove = popoverAboveTop >= 8;
+    const popoverTop =
+      isCompactPreview && !isFullscreenCanvas
+        ? selectionTop < frameHeight / 2
+          ? popoverBelowTop
+          : popoverAboveTop
+        : canPlaceBelow
+          ? popoverBelowTop
+          : canPlaceAbove
+            ? popoverAboveTop
+            : clampToFrame(
+                selectionBottom + 12,
+                minPopoverTop,
+                maxPopoverTop,
+              );
 
     selectionToolbarStyle = {
       left: `${toolbarLeft}px`,
@@ -240,24 +263,15 @@ export function EditorCanvas({
                         }}
                       />
                     ) : (
-                      <Text
+                      <Group
                         key={layer.id}
                         x={layer.x}
                         y={layer.y}
-                        text={layer.text}
                         width={layer.width}
                         height={layer.height}
                         draggable
                         rotation={layer.rotation}
-                        fontFamily={layer.fontFamily}
-                        fontStyle={layer.fontStyle ?? 'normal'}
-                        fontSize={layer.fontSize}
-                        fill={layer.color}
                         opacity={editingTextLayerId === layer.id ? 0 : 1}
-                        align={layer.align}
-                        letterSpacing={layer.letterSpacing ?? 0}
-                        lineHeight={layer.lineHeight}
-                        wrap="word"
                         onTransform={(event) => onTransform(layer.id, event)}
                         onClick={() => onSelectLayer(layer.id)}
                         onTap={() => onSelectLayer(layer.id)}
@@ -270,7 +284,34 @@ export function EditorCanvas({
                             nodeRefs.current[layer.id] = node;
                           }
                         }}
-                      />
+                      >
+                        {buildTextHighlightRects(layer).map((rect, index) => (
+                          <Rect
+                            key={`${layer.id}-highlight-${index}`}
+                            x={rect.x}
+                            y={rect.y}
+                            width={rect.width}
+                            height={rect.height}
+                            cornerRadius={rect.cornerRadius}
+                            fill={layer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR}
+                          />
+                        ))}
+                        <Text
+                          x={0}
+                          y={0}
+                          text={layer.text}
+                          width={layer.width}
+                          height={layer.height}
+                          fontFamily={layer.fontFamily}
+                          fontStyle={layer.fontStyle ?? 'normal'}
+                          fontSize={layer.fontSize}
+                          fill={layer.color}
+                          align={layer.align}
+                          letterSpacing={layer.letterSpacing ?? 0}
+                          lineHeight={layer.lineHeight}
+                          wrap="word"
+                        />
+                      </Group>
                     ),
                   )}
                   <Transformer
@@ -353,6 +394,67 @@ export function EditorCanvas({
                       ))}
                     </select>
                   </label>
+
+                  <div className="text-selection-field">
+                    <span>Выравнивание</span>
+                    <div className="text-selection-align-row">
+                      {([
+                        ['left', 'Слева'],
+                        ['center', 'Центр'],
+                        ['right', 'Справа'],
+                      ] as const).map(([align, label]) => (
+                        <button
+                          key={align}
+                          type="button"
+                          className={`ghost text-selection-align-button${
+                            selectedTextLayer.align === align
+                              ? ' text-selection-align-button--active'
+                              : ''
+                          }`}
+                          onClick={() =>
+                            onQuickTextStyleChange({
+                              align,
+                            })
+                          }
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="text-selection-field">
+                    <span>Плашка</span>
+                    <div className="text-selection-highlight-row">
+                      <button
+                        type="button"
+                        className={`ghost text-selection-highlight-button${
+                          selectedTextLayer.backgroundEnabled
+                            ? ' text-selection-highlight-button--active'
+                            : ''
+                        }`}
+                        onClick={() =>
+                          onQuickTextStyleChange({
+                            backgroundEnabled: !selectedTextLayer.backgroundEnabled,
+                            backgroundColor:
+                              selectedTextLayer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
+                          })
+                        }
+                      >
+                        {selectedTextLayer.backgroundEnabled ? 'Вкл' : 'Выкл'}
+                      </button>
+                      <input
+                        type="color"
+                        value={selectedTextLayer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR}
+                        disabled={!selectedTextLayer.backgroundEnabled}
+                        onChange={(event) =>
+                          onQuickTextStyleChange({
+                            backgroundColor: event.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                  </div>
 
                   <div className="text-selection-field">
                     <span>Размер</span>

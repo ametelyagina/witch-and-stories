@@ -64,6 +64,8 @@ export type TextLayer = BaseLayer & {
   lineHeight: number;
   align: TextAlign;
   color: string;
+  backgroundEnabled?: boolean;
+  backgroundColor?: string;
   stylePresetId?: string;
 };
 

@@ -1,5 +1,6 @@
 type ActionRailProps = {
   onUploadImage: () => void;
+  onPaste: () => void;
   onAddText: () => void;
   onUploadFont: () => void;
   onDeleteSelected: () => void;
@@ -30,6 +31,7 @@ function ActionButton({ className = '', disabled, label, onClick }: ActionButton
 
 export function ActionRail({
   onUploadImage,
+  onPaste,
   onAddText,
   onUploadFont,
   onDeleteSelected,
@@ -40,6 +42,7 @@ export function ActionRail({
   return (
     <aside className="action-rail">
       <ActionButton className="primary" label="Загрузить фото" onClick={onUploadImage} />
+      <ActionButton className="ghost" label="Вставить" onClick={onPaste} />
       <ActionButton className="secondary" label="Добавить текст" onClick={onAddText} />
       <ActionButton className="ghost" label="Импорт шрифта" onClick={onUploadFont} />
       <ActionButton className="danger" disabled={isDeleteDisabled} label="Удалить слой" onClick={onDeleteSelected} />
