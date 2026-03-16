@@ -160,10 +160,9 @@ function App() {
   const addImageLayer = async (file: File) => {
     const objectUrl = URL.createObjectURL(file);
     const image = await loadImage(objectUrl);
-    const fitScale = Math.min(
-      (stageSize.width * 0.9) / image.width,
-      (stageSize.height * 0.9) / image.height,
-      1,
+    const fitScale = Math.max(
+      stageSize.width / image.width,
+      stageSize.height / image.height,
     );
 
     const layer: ImageLayer = {
@@ -444,7 +443,7 @@ function App() {
                 ref={transformerRef}
                 rotateEnabled
                 ignoreStroke
-                keepRatio={false}
+                keepRatio
               />
             </KonvaLayer>
           </Stage>
