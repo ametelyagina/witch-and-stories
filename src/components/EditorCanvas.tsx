@@ -11,8 +11,11 @@ type EditorCanvasProps = {
   height: number;
   scale: number;
   selectedLayer: Layer | null;
+  dragArmedImageId: string | null;
   onCanvasMouseDown: (event: Konva.KonvaEventObject<MouseEvent>) => void;
   onSelectLayer: (id: string) => void;
+  onTapImageLayer: (id: string) => void;
+  onArmImageDrag: (id: string) => void;
   onDragEnd: (id: string, event: Konva.KonvaEventObject<DragEvent>) => void;
   onTransform: (id: string, event: Konva.KonvaEventObject<Event>) => void;
   transformerRef: RefObject<Konva.Transformer | null>;
@@ -26,8 +29,11 @@ export function EditorCanvas({
   height,
   scale,
   selectedLayer,
+  dragArmedImageId,
   onCanvasMouseDown,
   onSelectLayer,
+  onTapImageLayer,
+  onArmImageDrag,
   onDragEnd,
   onTransform,
   transformerRef,
@@ -90,14 +96,36 @@ export function EditorCanvas({
                         rotation={layer.rotation}
                         width={layer.width}
                         height={layer.height}
+                        dragBoundFunc={(position) =>
+                          dragArmedImageId === layer.id
+                            ? position
+                            : {
+                                x: layer.x,
+                                y: layer.y,
+                              }
+                        }
                         crop={{
                           x: (layer.crop.x / 100) * layer.naturalWidth,
                           y: (layer.crop.y / 100) * layer.naturalHeight,
                           width: (layer.crop.width / 100) * layer.naturalWidth,
                           height: (layer.crop.height / 100) * layer.naturalHeight,
                         }}
-                        onClick={() => onSelectLayer(layer.id)}
-                        onTap={() => onSelectLayer(layer.id)}
+                        onClick={() => onTapImageLayer(layer.id)}
+                        onTap={() => onTapImageLayer(layer.id)}
+                        onDblClick={() => onArmImageDrag(layer.id)}
+                        onDblTap={() => onArmImageDrag(layer.id)}
+                        onDragStart={(event) => {
+                          if (dragArmedImageId === layer.id) {
+                            return;
+                          }
+
+                          event.target.stopDrag();
+                          event.target.position({
+                            x: layer.x,
+                            y: layer.y,
+                          });
+                          onSelectLayer(layer.id);
+                        }}
                         onDragEnd={(event) => onDragEnd(layer.id, event)}
                         onTransformEnd={(event) => onTransform(layer.id, event)}
                         ref={(node) => {
@@ -172,7 +200,11 @@ export function EditorCanvas({
         <p className="hint">
           {layers.length === 0
             ? `Пустая канва ${width} x ${height}. Перетащите фото сюда, вставьте из буфера или нажмите “Загрузить фото”.`
-            : `${width} x ${height} · ${Math.round(scale * 100)}% · кликните по пустой области, чтобы снять выделение.`}
+            : selectedLayer?.type === 'image' && dragArmedImageId === selectedLayer.id
+              ? `${width} x ${height} · ${Math.round(scale * 100)}% · фото разблокировано для перемещения, после drag блокировка вернётся.`
+              : selectedLayer?.type === 'image'
+                ? `${width} x ${height} · ${Math.round(scale * 100)}% · первый тап выделяет фото, второй тап или double tap включает перемещение.`
+                : `${width} x ${height} · ${Math.round(scale * 100)}% · кликните по пустой области, чтобы снять выделение.`}
         </p>
       </div>
     </section>

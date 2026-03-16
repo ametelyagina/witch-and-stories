@@ -28,6 +28,7 @@ function App() {
   const [preset, setPreset] = useState<Preset>('story');
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
+  const [dragArmedImageId, setDragArmedImageId] = useState<string | null>(null);
   const [fonts, setFonts] = useState<UploadedFont[]>([DEFAULT_FONT]);
   const [stageScale, setStageScale] = useState(1);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -119,7 +120,26 @@ function App() {
   const handleCanvasMouseDown = (event: Konva.KonvaEventObject<MouseEvent>) => {
     if (event.target === event.target.getStage()) {
       setSelectedLayerId(null);
+      setDragArmedImageId(null);
     }
+  };
+
+  const handleSelectLayer = (id: string) => {
+    setSelectedLayerId(id);
+    if (dragArmedImageId !== id) {
+      setDragArmedImageId(null);
+    }
+  };
+
+  const handleTapImageLayer = (id: string) => {
+    const isSameSelectedImage = selectedLayerId === id;
+    setSelectedLayerId(id);
+    setDragArmedImageId(isSameSelectedImage ? id : null);
+  };
+
+  const handleArmImageDrag = (id: string) => {
+    setSelectedLayerId(id);
+    setDragArmedImageId(id);
   };
 
   const readBlobAsDataUrl = (blob: Blob) => {
@@ -342,10 +362,16 @@ function App() {
   const handleDragEnd = (id: string, event: Konva.KonvaEventObject<DragEvent>) => {
     const node = event.target;
     if (!(node instanceof Konva.Node)) return;
+
     updateLayer(id, {
       x: node.x(),
       y: node.y(),
     });
+
+    const layer = layers.find((item) => item.id === id);
+    if (layer?.type === 'image') {
+      setDragArmedImageId(null);
+    }
   };
 
   const handleExport = () => {
@@ -382,7 +408,17 @@ function App() {
     if (!selectedLayerId) return;
     setLayers((prev) => prev.filter((layer) => layer.id !== selectedLayerId));
     setSelectedLayerId(null);
+    setDragArmedImageId(null);
   };
+
+  useEffect(() => {
+    if (!dragArmedImageId) return;
+
+    const armedLayer = layers.find((layer) => layer.id === dragArmedImageId);
+    if (!armedLayer || armedLayer.type !== 'image' || selectedLayerId !== dragArmedImageId) {
+      setDragArmedImageId(null);
+    }
+  }, [dragArmedImageId, layers, selectedLayerId]);
 
   useEffect(() => {
     const isTypingTarget = (target: EventTarget | null) => {
@@ -563,8 +599,11 @@ function App() {
             height={stageSize.height}
             scale={stageScale}
             selectedLayer={selectedLayer}
+            dragArmedImageId={dragArmedImageId}
             onCanvasMouseDown={handleCanvasMouseDown}
-            onSelectLayer={setSelectedLayerId}
+            onSelectLayer={handleSelectLayer}
+            onTapImageLayer={handleTapImageLayer}
+            onArmImageDrag={handleArmImageDrag}
             onDragEnd={handleDragEnd}
             onTransform={handleTransform}
             onDropFiles={handleCanvasDrop}
