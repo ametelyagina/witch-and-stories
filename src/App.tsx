@@ -117,8 +117,23 @@ function App() {
     }
   };
 
-  const addImageLayer = async (file: File) => {
-    const dataUrl = await readFileAsDataUrl(file);
+  const readBlobAsDataUrl = (blob: Blob) => {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+          return;
+        }
+
+        reject(new Error('Не удалось прочитать данные.'));
+      };
+      reader.onerror = () => reject(new Error('Ошибка чтения данных.'));
+      reader.readAsDataURL(blob);
+    });
+  };
+
+  const addImageLayerFromDataUrl = async (dataUrl: string) => {
     const image = await loadImage(dataUrl);
     const fitScale = Math.max(stageSize.width / image.width, stageSize.height / image.height);
 
@@ -146,12 +161,17 @@ function App() {
     setSelectedLayerId(layer.id);
   };
 
-  const addTextLayer = () => {
+  const addImageLayer = async (file: File) => {
+    const dataUrl = await readFileAsDataUrl(file);
+    await addImageLayerFromDataUrl(dataUrl);
+  };
+
+  const addTextLayer = (value = 'Новый текст') => {
     const id = nanoid();
     const layer: Layer = {
       id,
       type: 'text',
-      text: 'Новый текст',
+      text: value,
       fontFamily: fonts[0].family,
       fontSize: 84,
       lineHeight: 1.2,
@@ -264,6 +284,54 @@ function App() {
     setPreset(nextPreset);
   };
 
+  const removeSelectedLayer = () => {
+    if (!selectedLayerId) return;
+    setLayers((prev) => prev.filter((layer) => layer.id !== selectedLayerId));
+    setSelectedLayerId(null);
+  };
+
+  const addTextToSelectionOrNewLayer = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    if (selectedLayer?.type === 'text') {
+      updateTextField(selectedLayer.id, `${selectedLayer.text}\n${text}`);
+      return;
+    }
+
+    addTextLayer(trimmed);
+  };
+
+  const handlePaste = async () => {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.read) {
+        const plainText = await navigator.clipboard.readText();
+        if (plainText) {
+          await addTextToSelectionOrNewLayer(plainText);
+        }
+        return;
+      }
+
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
+        const imageType = item.types.find((type) => type.startsWith('image/'));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const imageDataUrl = await readBlobAsDataUrl(blob);
+          await addImageLayerFromDataUrl(imageDataUrl);
+          return;
+        }
+      }
+
+      const itemText = await navigator.clipboard.readText();
+      if (itemText) {
+        await addTextToSelectionOrNewLayer(itemText);
+      }
+    } catch {
+      alert('Не удалось прочитать буфер обмена. Проверьте разрешения и попробуйте снова.');
+    }
+  };
+
   const handleUploadImage = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -300,8 +368,11 @@ function App() {
         onUploadImage={() => imageInputRef.current?.click()}
         onAddText={addTextLayer}
         onUploadFont={() => fontInputRef.current?.click()}
+        onPaste={handlePaste}
+        onDeleteSelected={removeSelectedLayer}
         onExport={handleExport}
         isExportDisabled={layers.length === 0}
+        isDeleteDisabled={!selectedLayer}
       />
 
       <main className="workbench">

@@ -7,8 +7,11 @@ type TopBarProps = {
   onUploadImage: () => void;
   onAddText: () => void;
   onUploadFont: () => void;
+  onPaste: () => void;
+  onDeleteSelected: () => void;
   onExport: () => void;
   isExportDisabled: boolean;
+  isDeleteDisabled: boolean;
 };
 
 export function TopBar({
@@ -18,8 +21,11 @@ export function TopBar({
   onUploadImage,
   onAddText,
   onUploadFont,
+  onPaste,
+  onDeleteSelected,
   onExport,
   isExportDisabled,
+  isDeleteDisabled,
 }: TopBarProps) {
   return (
     <header className="topbar">
@@ -45,6 +51,12 @@ export function TopBar({
         </button>
         <button type="button" onClick={onUploadFont}>
           Загрузить шрифт (.ttf)
+        </button>
+        <button type="button" onClick={onPaste}>
+          Вставить
+        </button>
+        <button type="button" onClick={onDeleteSelected} disabled={isDeleteDisabled}>
+          Удалить
         </button>
         <button
           type="button"
