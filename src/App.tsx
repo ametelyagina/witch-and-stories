@@ -317,11 +317,13 @@ function App() {
 
     if (layer.type === 'text') {
       const width = clamp(node.width() * scaleX, 40, stageSize.width * 3);
+      const height = clamp(node.height() * scaleY, 40, stageSize.height * 3);
       updateLayer(id, {
         x: node.x(),
         y: node.y(),
         rotation: node.rotation(),
         width,
+        height,
       });
       return;
     }

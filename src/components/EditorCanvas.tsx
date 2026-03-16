@@ -152,7 +152,12 @@ export function EditorCanvas({
                     keepRatio={selectedLayer?.type === 'image'}
                     enabledAnchors={
                       selectedLayer?.type === 'text'
-                        ? ['middle-left', 'middle-right']
+                        ? [
+                            'top-center',
+                            'middle-left',
+                            'middle-right',
+                            'bottom-center',
+                          ]
                         : undefined
                     }
                   />
