@@ -29,6 +29,13 @@ function App() {
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [dragArmedImageId, setDragArmedImageId] = useState<string | null>(null);
+  const [viewport, setViewport] = useState(() => ({
+    width: typeof window === 'undefined' ? 1280 : window.innerWidth,
+    height: typeof window === 'undefined' ? 900 : window.innerHeight,
+  }));
+  const [isCanvasExpanded, setIsCanvasExpanded] = useState(false);
+  const [isTextToolsOpen, setIsTextToolsOpen] = useState(false);
+  const [editingTextLayerId, setEditingTextLayerId] = useState<string | null>(null);
   const [fonts, setFonts] = useState<UploadedFont[]>([DEFAULT_FONT]);
   const [stageScale, setStageScale] = useState(1);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -51,18 +58,35 @@ function App() {
     () => layers.find((layer) => layer.id === selectedLayerId) || null,
     [layers, selectedLayerId],
   );
+  const isPhoneViewport = viewport.width <= 720;
 
   useEffect(() => {
     const resize = () => {
+      const nextViewport = {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      };
+      setViewport((current) =>
+        current.width === nextViewport.width && current.height === nextViewport.height
+          ? current
+          : nextViewport,
+      );
+
       const wrapper = containerRef.current;
       if (!wrapper) return;
 
       const wrapperBounds = wrapper.getBoundingClientRect();
       const availableWidth = Math.max(280, wrapper.clientWidth - 24);
-      const isStackedWorkbench = window.innerWidth <= 1120;
-      const availableHeight = isStackedWorkbench
+      const isStackedWorkbench = nextViewport.width <= 1120;
+      let availableHeight = isStackedWorkbench
         ? stageSize.height
-        : Math.max(220, window.innerHeight - wrapperBounds.top - 44);
+        : Math.max(220, nextViewport.height - wrapperBounds.top - 44);
+
+      if (nextViewport.width <= 720) {
+        availableHeight = isCanvasExpanded
+          ? Math.max(320, nextViewport.height - wrapperBounds.top - 24)
+          : Math.max(240, Math.min(nextViewport.height * 0.4, 320));
+      }
 
       const scale = Math.min(availableWidth / stageSize.width, availableHeight / stageSize.height, 1);
       setStageScale(Math.max(0.15, scale));
@@ -71,7 +95,44 @@ function App() {
     resize();
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
-  }, [stageSize.width, stageSize.height]);
+  }, [isCanvasExpanded, stageSize.width, stageSize.height]);
+
+  useEffect(() => {
+    if (!isPhoneViewport && isCanvasExpanded) {
+      setIsCanvasExpanded(false);
+    }
+  }, [isCanvasExpanded, isPhoneViewport]);
+
+  useEffect(() => {
+    if (!(isPhoneViewport && isCanvasExpanded)) {
+      return;
+    }
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [isCanvasExpanded, isPhoneViewport]);
+
+  useEffect(() => {
+    if (!(isPhoneViewport && isCanvasExpanded)) {
+      return;
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsCanvasExpanded(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isCanvasExpanded, isPhoneViewport]);
 
   useEffect(() => {
     (async () => {
@@ -121,11 +182,22 @@ function App() {
     if (event.target === event.target.getStage()) {
       setSelectedLayerId(null);
       setDragArmedImageId(null);
+      setIsTextToolsOpen(false);
+      setEditingTextLayerId(null);
     }
   };
 
   const handleSelectLayer = (id: string) => {
+    const nextLayer = layers.find((layer) => layer.id === id) || null;
     setSelectedLayerId(id);
+
+    if (nextLayer?.type !== 'text') {
+      setIsTextToolsOpen(false);
+      setEditingTextLayerId(null);
+    } else if (editingTextLayerId && editingTextLayerId !== id) {
+      setEditingTextLayerId(null);
+    }
+
     if (dragArmedImageId !== id) {
       setDragArmedImageId(null);
     }
@@ -135,11 +207,49 @@ function App() {
     const isSameSelectedImage = selectedLayerId === id;
     setSelectedLayerId(id);
     setDragArmedImageId(isSameSelectedImage ? id : null);
+    setIsTextToolsOpen(false);
+    setEditingTextLayerId(null);
   };
 
   const handleArmImageDrag = (id: string) => {
     setSelectedLayerId(id);
     setDragArmedImageId(id);
+    setIsTextToolsOpen(false);
+    setEditingTextLayerId(null);
+  };
+
+  const handleToggleTextTools = () => {
+    if (selectedLayer?.type !== 'text') {
+      return;
+    }
+
+    setIsTextToolsOpen((current) => !current);
+  };
+
+  const handleStartEditingText = (id: string) => {
+    setSelectedLayerId(id);
+    setEditingTextLayerId(id);
+    setIsTextToolsOpen(false);
+    setDragArmedImageId(null);
+  };
+
+  const handleStopEditingText = () => {
+    setEditingTextLayerId(null);
+  };
+
+  const handleQuickTextStyleChange = (changes: {
+    fontSize?: number;
+    lineHeight?: number;
+    color?: string;
+  }) => {
+    if (selectedLayer?.type !== 'text') {
+      return;
+    }
+
+    updateLayer(selectedLayer.id, {
+      ...changes,
+      stylePresetId: undefined,
+    });
   };
 
   const readBlobAsDataUrl = (blob: Blob) => {
@@ -230,6 +340,9 @@ function App() {
 
     setLayers((prev) => [...prev, layer]);
     setSelectedLayerId(layer.id);
+    setEditingTextLayerId(null);
+    setIsTextToolsOpen(false);
+    setDragArmedImageId(null);
   };
 
   const addImageLayerFromDataUrl = async (dataUrl: string) => {
@@ -290,6 +403,9 @@ function App() {
 
     setLayers((prev) => [...prev, layer]);
     setSelectedLayerId(id);
+    setEditingTextLayerId(id);
+    setIsTextToolsOpen(false);
+    setDragArmedImageId(null);
   };
 
   const moveLayer = (direction: 'backward' | 'forward') => {
@@ -409,6 +525,8 @@ function App() {
     setLayers((prev) => prev.filter((layer) => layer.id !== selectedLayerId));
     setSelectedLayerId(null);
     setDragArmedImageId(null);
+    setIsTextToolsOpen(false);
+    setEditingTextLayerId(null);
   };
 
   useEffect(() => {
@@ -419,6 +537,18 @@ function App() {
       setDragArmedImageId(null);
     }
   }, [dragArmedImageId, layers, selectedLayerId]);
+
+  useEffect(() => {
+    if (!selectedLayer || selectedLayer.type !== 'text') {
+      setIsTextToolsOpen(false);
+      setEditingTextLayerId(null);
+      return;
+    }
+
+    if (editingTextLayerId && editingTextLayerId !== selectedLayer.id) {
+      setEditingTextLayerId(null);
+    }
+  }, [editingTextLayerId, selectedLayer]);
 
   useEffect(() => {
     const isTypingTarget = (target: EventTarget | null) => {
@@ -577,18 +707,34 @@ function App() {
           isExportDisabled={layers.length === 0}
         />
 
-        <section className="canvas-column">
-          <div className="preset-strip" aria-label="Canvas presets">
-            {PRESETS.map((item) => (
+        <section
+          className={`canvas-column${isPhoneViewport && !isCanvasExpanded ? ' canvas-column--compact' : ''}${
+            isPhoneViewport && isCanvasExpanded ? ' canvas-column--expanded' : ''
+          }`}
+        >
+          <div className="canvas-toolbar">
+            <div className="preset-strip" aria-label="Canvas presets">
+              {PRESETS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  className={preset === item.key ? 'active' : 'ghost'}
+                  onClick={() => handlePresetChange(item.key)}
+                >
+                  {item.key === 'story' ? '9:16' : '4:5'}
+                </button>
+              ))}
+            </div>
+
+            {isPhoneViewport ? (
               <button
-                key={item.key}
                 type="button"
-                className={preset === item.key ? 'active' : 'ghost'}
-                onClick={() => handlePresetChange(item.key)}
+                className={isCanvasExpanded ? 'secondary canvas-expand-button' : 'ghost canvas-expand-button'}
+                onClick={() => setIsCanvasExpanded((current) => !current)}
               >
-                {item.key === 'story' ? '9:16' : '4:5'}
+                {isCanvasExpanded ? 'Свернуть' : 'Развернуть'}
               </button>
-            ))}
+            ) : null}
           </div>
 
           <EditorCanvas
@@ -599,11 +745,20 @@ function App() {
             height={stageSize.height}
             scale={stageScale}
             selectedLayer={selectedLayer}
+            isCompactPreview={isPhoneViewport && !isCanvasExpanded}
             dragArmedImageId={dragArmedImageId}
+            isTextToolsOpen={isTextToolsOpen}
+            editingTextLayerId={editingTextLayerId}
             onCanvasMouseDown={handleCanvasMouseDown}
             onSelectLayer={handleSelectLayer}
             onTapImageLayer={handleTapImageLayer}
             onArmImageDrag={handleArmImageDrag}
+            onToggleTextTools={handleToggleTextTools}
+            onQuickTextStyleChange={handleQuickTextStyleChange}
+            onDeleteSelected={removeSelectedLayer}
+            onStartEditingText={handleStartEditingText}
+            onStopEditingText={handleStopEditingText}
+            onInlineTextChange={updateTextField}
             onDragEnd={handleDragEnd}
             onTransform={handleTransform}
             onDropFiles={handleCanvasDrop}

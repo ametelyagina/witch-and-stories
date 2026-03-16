@@ -294,6 +294,13 @@ input[type='color'] {
   align-content: start;
 }
 
+.canvas-toolbar {
+  width: 100%;
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+}
+
 .preset-strip {
   display: inline-grid;
   grid-template-columns: repeat(2, minmax(0, 180px));
@@ -307,6 +314,15 @@ input[type='color'] {
   border-radius: 22px;
   font-size: 17px;
   font-weight: 700;
+}
+
+.canvas-expand-button {
+  min-height: 48px;
+  border-radius: 18px;
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .canvas-shell {
@@ -367,6 +383,110 @@ canvas {
   max-width: 420px;
   padding: 0 4px;
   text-align: center;
+}
+
+.text-selection-toolbar,
+.text-selection-popover,
+.text-inline-editor {
+  position: absolute;
+  z-index: 5;
+}
+
+.text-selection-toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+.text-selection-button {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(255 248 240 / 96%);
+  color: var(--ink);
+  border: 1px solid rgb(197 176 153 / 72%);
+  box-shadow: 0 10px 22px rgb(36 29 23 / 12%);
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.text-selection-button--active {
+  background: linear-gradient(135deg, var(--accent), #eb8a5a);
+  color: #fff8f0;
+}
+
+.text-selection-button--danger {
+  background: linear-gradient(135deg, #4f2f26, #241913);
+  color: #fff5ef;
+}
+
+.text-selection-popover {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgb(197 176 153 / 70%);
+  background: rgb(255 248 240 / 96%);
+  box-shadow: 0 16px 34px rgb(36 29 23 / 14%);
+}
+
+.text-selection-edit-button {
+  min-height: 42px;
+  border-radius: 14px;
+}
+
+.text-selection-field {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.text-selection-field strong {
+  color: var(--accent-deep);
+  font-size: 12px;
+}
+
+.text-selection-field--color {
+  grid-template-columns: auto 56px;
+  align-items: center;
+}
+
+.text-selection-field--color input[type='color'] {
+  height: 40px;
+}
+
+.text-inline-editor {
+  padding: 8px;
+  border-radius: 18px;
+  border: 2px dashed rgb(217 104 60 / 60%);
+  background: rgb(255 252 247 / 94%);
+  box-shadow: 0 18px 36px rgb(36 29 23 / 12%);
+  transform-origin: top left;
+}
+
+.text-inline-editor-input {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  resize: none;
+  padding: 8px 8px 44px;
+  border-radius: 12px;
+  border: 1px solid rgb(217 104 60 / 18%);
+  background: transparent;
+  box-shadow: none;
+}
+
+.text-inline-editor-done {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
 }
 
 .sidebar {
@@ -858,6 +978,70 @@ canvas {
     width: 100%;
     position: relative;
     z-index: 1;
+  }
+
+  .canvas-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .canvas-toolbar .preset-strip {
+    width: 100%;
+  }
+
+  .canvas-column--compact .canvas-wrap {
+    padding: 12px;
+  }
+
+  .canvas-column--compact .hint {
+    max-width: 320px;
+    font-size: 12px;
+  }
+
+  .text-selection-popover {
+    width: min(240px, calc(100vw - 28px)) !important;
+  }
+
+  .text-inline-editor {
+    max-width: calc(100vw - 48px);
+  }
+
+  .canvas-column--expanded {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    padding: 14px;
+    background:
+      radial-gradient(circle at top, rgb(242 198 162 / 32%), transparent 28%),
+      linear-gradient(180deg, rgb(247 241 231 / 98%), rgb(240 229 214 / 98%));
+    overflow: auto;
+    align-content: start;
+    justify-items: center;
+  }
+
+  .canvas-column--expanded .canvas-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    width: 100%;
+    max-width: 520px;
+    padding-bottom: 8px;
+    background: linear-gradient(180deg, rgb(247 241 231 / 98%), rgb(247 241 231 / 92%) 78%, transparent);
+  }
+
+  .canvas-column--expanded .canvas-shell,
+  .canvas-column--expanded .canvas-stage,
+  .canvas-column--expanded .canvas-wrap {
+    width: 100%;
+  }
+
+  .canvas-column--expanded .canvas-wrap {
+    max-width: 520px;
+    padding: 16px 12px;
+    border-radius: 24px;
+    border: 1px solid rgb(197 176 153 / 56%);
+    background: rgb(255 248 240 / 84%);
+    box-shadow: var(--shadow);
   }
 
   .action-rail {
