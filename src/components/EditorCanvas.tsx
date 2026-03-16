@@ -247,8 +247,9 @@ export function EditorCanvas({
                         rotation={layer.rotation}
                         width={layer.width}
                         height={layer.height}
+                        hitStrokeWidth={layer.kind === 'overlay' ? 36 : 20}
                         dragBoundFunc={(position) =>
-                          dragArmedImageId === layer.id
+                          layer.kind === 'overlay' || dragArmedImageId === layer.id
                             ? position
                             : {
                                 x: layer.x,
@@ -261,11 +262,28 @@ export function EditorCanvas({
                           width: (layer.crop.width / 100) * layer.naturalWidth,
                           height: (layer.crop.height / 100) * layer.naturalHeight,
                         }}
-                        onClick={() => onTapImageLayer(layer.id)}
-                        onTap={() => onTapImageLayer(layer.id)}
-                        onDblClick={() => onArmImageDrag(layer.id)}
-                        onDblTap={() => onArmImageDrag(layer.id)}
+                        onClick={() =>
+                          layer.kind === 'overlay' ? onSelectLayer(layer.id) : onTapImageLayer(layer.id)
+                        }
+                        onTap={() =>
+                          layer.kind === 'overlay' ? onSelectLayer(layer.id) : onTapImageLayer(layer.id)
+                        }
+                        onDblClick={() => {
+                          if (layer.kind !== 'overlay') {
+                            onArmImageDrag(layer.id);
+                          }
+                        }}
+                        onDblTap={() => {
+                          if (layer.kind !== 'overlay') {
+                            onArmImageDrag(layer.id);
+                          }
+                        }}
                         onDragStart={(event) => {
+                          if (layer.kind === 'overlay') {
+                            onSelectLayer(layer.id);
+                            return;
+                          }
+
                           if (dragArmedImageId === layer.id) {
                             return;
                           }
@@ -342,15 +360,15 @@ export function EditorCanvas({
                     rotateEnabled
                     ignoreStroke
                     borderStroke="#d9683c"
-                    borderStrokeWidth={2}
+                    borderStrokeWidth={2.5}
                     borderDash={[10, 6]}
                     anchorFill="#fff8f0"
                     anchorStroke="#9f4625"
                     anchorStrokeWidth={2}
-                    anchorSize={14}
+                    anchorSize={22}
                     anchorCornerRadius={999}
-                    rotateAnchorOffset={28}
-                    padding={10}
+                    rotateAnchorOffset={34}
+                    padding={14}
                     keepRatio={selectedLayer?.type === 'image'}
                     enabledAnchors={
                       selectedLayer?.type === 'text'
@@ -599,6 +617,8 @@ export function EditorCanvas({
           <p className="hint">
             {layers.length === 0
               ? `Пустая канва ${width} x ${height}. Перетащите фото сюда, вставьте из буфера или нажмите “Загрузить фото”.`
+              : selectedLayer?.type === 'image' && selectedLayer.kind === 'overlay'
+                ? `${width} x ${height} · ${Math.round(scale * 100)}% · стикер можно сразу тянуть за любое место, рамка и точки увеличены для пальца.`
               : selectedLayer?.type === 'image' && dragArmedImageId === selectedLayer.id
                 ? `${width} x ${height} · ${Math.round(scale * 100)}% · фото разблокировано для перемещения, после drag блокировка вернётся.`
                 : selectedLayer?.type === 'image'

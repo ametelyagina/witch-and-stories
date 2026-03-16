@@ -47,6 +47,7 @@ export type TextFontStyle = 'normal' | 'bold' | 'italic' | 'bold italic';
 
 export type ImageLayer = BaseLayer & {
   type: 'image';
+  kind?: 'background' | 'overlay';
   src: string;
   image: HTMLImageElement;
   naturalWidth: number;

@@ -161,7 +161,7 @@ function App() {
 
   useEffect(() => {
     if (!isHydrated) return;
-    saveState({
+    void saveState({
       preset,
       selectedLayerId,
       layers,
@@ -288,6 +288,7 @@ function App() {
     image: HTMLImageElement,
     dataUrl: string,
     placement: {
+      kind: 'background' | 'overlay';
       x: number;
       y: number;
       width: number;
@@ -298,6 +299,7 @@ function App() {
     return {
       id: nanoid(),
       type: 'image',
+      kind: placement.kind,
       src: dataUrl,
       image,
       naturalWidth: image.width,
@@ -323,6 +325,7 @@ function App() {
     const width = Math.max(72, image.width * scale);
     const height = Math.max(72, image.height * scale);
     const layer = createImageLayer(image, dataUrl, {
+      kind: 'overlay',
       x: (stageSize.width - width) / 2,
       y: (stageSize.height - height) / 2,
       width,
@@ -395,6 +398,7 @@ function App() {
       y = (target.height - height) / 2;
     }
     const layer = createImageLayer(image, dataUrl, {
+      kind: 'background',
       x,
       y,
       width,
@@ -606,7 +610,12 @@ function App() {
     if (!dragArmedImageId) return;
 
     const armedLayer = layers.find((layer) => layer.id === dragArmedImageId);
-    if (!armedLayer || armedLayer.type !== 'image' || selectedLayerId !== dragArmedImageId) {
+    if (
+      !armedLayer ||
+      armedLayer.type !== 'image' ||
+      armedLayer.kind === 'overlay' ||
+      selectedLayerId !== dragArmedImageId
+    ) {
       setDragArmedImageId(null);
     }
   }, [dragArmedImageId, layers, selectedLayerId]);

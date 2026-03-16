@@ -16,9 +16,13 @@ type PersistedEnvelope = {
   selectedLayerId?: string | null;
   fonts?: unknown[];
   layers?: unknown[];
+  savedAt?: number;
 };
 
 const STORAGE_KEY = 'story-text-editor-state-v1';
+const STORAGE_DB_NAME = 'story-text-editor-storage';
+const STORAGE_DB_VERSION = 1;
+const STORAGE_OBJECT_STORE = 'state';
 
 const normalizeFont = (value: unknown): UploadedFont | null => {
   if (!value || typeof value !== 'object') return null;
@@ -159,6 +163,7 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
   }
 
   const imageLayer = value as {
+    kind?: unknown;
     src?: unknown;
     naturalWidth?: unknown;
     naturalHeight?: unknown;
@@ -178,6 +183,7 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
   return {
     id: layer.id,
     type: 'image',
+    kind: imageLayer.kind === 'overlay' ? 'overlay' : 'background',
     x: layer.x,
     y: layer.y,
     width: layer.width,
@@ -188,6 +194,122 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
     naturalHeight: imageLayer.naturalHeight,
     crop,
   };
+};
+
+const readEnvelopeFromLocalStorage = (): PersistedEnvelope | null => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    return JSON.parse(raw) as PersistedEnvelope;
+  } catch {
+    return null;
+  }
+};
+
+const getEnvelopeSavedAt = (value: PersistedEnvelope | null) =>
+  typeof value?.savedAt === 'number' ? value.savedAt : 0;
+
+const pickMostRecentEnvelope = (
+  localEnvelope: PersistedEnvelope | null,
+  indexedDbEnvelope: PersistedEnvelope | null,
+) => {
+  if (!localEnvelope) {
+    return indexedDbEnvelope;
+  }
+
+  if (!indexedDbEnvelope) {
+    return localEnvelope;
+  }
+
+  return getEnvelopeSavedAt(localEnvelope) >= getEnvelopeSavedAt(indexedDbEnvelope)
+    ? localEnvelope
+    : indexedDbEnvelope;
+};
+
+const openStorageDatabase = async () => {
+  if (typeof indexedDB === 'undefined') {
+    return null;
+  }
+
+  return new Promise<IDBDatabase | null>((resolve) => {
+    try {
+      const request = indexedDB.open(STORAGE_DB_NAME, STORAGE_DB_VERSION);
+
+      request.onupgradeneeded = () => {
+        const database = request.result;
+        if (!database.objectStoreNames.contains(STORAGE_OBJECT_STORE)) {
+          database.createObjectStore(STORAGE_OBJECT_STORE);
+        }
+      };
+
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(null);
+      request.onblocked = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+};
+
+const readEnvelopeFromIndexedDb = async (): Promise<PersistedEnvelope | null> => {
+  const database = await openStorageDatabase();
+  if (!database) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const transaction = database.transaction(STORAGE_OBJECT_STORE, 'readonly');
+      const store = transaction.objectStore(STORAGE_OBJECT_STORE);
+      const request = store.get(STORAGE_KEY);
+
+      request.onsuccess = () => {
+        const result = request.result;
+        resolve(result && typeof result === 'object' ? (result as PersistedEnvelope) : null);
+      };
+      request.onerror = () => resolve(null);
+      transaction.oncomplete = () => database.close();
+      transaction.onerror = () => database.close();
+      transaction.onabort = () => database.close();
+    } catch {
+      database.close();
+      resolve(null);
+    }
+  });
+};
+
+const writeEnvelopeToIndexedDb = async (payload: PersistedEnvelope) => {
+  const database = await openStorageDatabase();
+  if (!database) {
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    try {
+      const transaction = database.transaction(STORAGE_OBJECT_STORE, 'readwrite');
+      const store = transaction.objectStore(STORAGE_OBJECT_STORE);
+      store.put(payload, STORAGE_KEY);
+
+      transaction.oncomplete = () => {
+        database.close();
+        resolve();
+      };
+      transaction.onerror = () => {
+        database.close();
+        resolve();
+      };
+      transaction.onabort = () => {
+        database.close();
+        resolve();
+      };
+    } catch {
+      database.close();
+      resolve();
+    }
+  });
 };
 
 const buildImage = async (layer: PersistedImageLayer) => {
@@ -207,10 +329,10 @@ export type EditorPersistedState = {
 
 export const readState = async (): Promise<EditorPersistedState | null> => {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-
-    const parsed = JSON.parse(raw) as PersistedEnvelope;
+    const localEnvelope = readEnvelopeFromLocalStorage();
+    const indexedDbEnvelope = await readEnvelopeFromIndexedDb();
+    const parsed = pickMostRecentEnvelope(localEnvelope, indexedDbEnvelope);
+    if (!parsed) return null;
     const restoredPreset: Preset = parsed.preset === 'carousel' ? 'carousel' : 'story';
     const restoredFonts = [
       DEFAULT_FONT,
@@ -291,7 +413,7 @@ export const readState = async (): Promise<EditorPersistedState | null> => {
   }
 };
 
-export const saveState = (state: EditorPersistedState) => {
+export const saveState = async (state: EditorPersistedState) => {
   const serializableLayers = state.layers.map((layer) => {
     if (layer.type === 'image') {
       const { image, ...rest } = layer;
@@ -306,6 +428,7 @@ export const saveState = (state: EditorPersistedState) => {
     selectedLayerId: state.selectedLayerId,
     fonts: state.fonts,
     layers: serializableLayers,
+    savedAt: Date.now(),
   };
 
   try {
@@ -313,4 +436,6 @@ export const saveState = (state: EditorPersistedState) => {
   } catch {
     // ignore storage issues
   }
+
+  await writeEnvelopeToIndexedDb(payload);
 };
