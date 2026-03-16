@@ -3,6 +3,7 @@ import Konva from 'konva';
 import { nanoid } from 'nanoid';
 
 import { TopBar } from './components/TopBar';
+import { ImagePresetModal } from './components/ImagePresetModal';
 import { EditorCanvas } from './components/EditorCanvas';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import {
@@ -28,6 +29,10 @@ function App() {
   const [fonts, setFonts] = useState<UploadedFont[]>([DEFAULT_FONT]);
   const [stageScale, setStageScale] = useState(1);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [pendingMainPhoto, setPendingMainPhoto] = useState<{
+    dataUrl: string;
+    image: HTMLImageElement;
+  } | null>(null);
 
   const stageRef = useRef<Konva.Stage | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -41,6 +46,10 @@ function App() {
   const selectedLayer = useMemo(
     () => layers.find((layer) => layer.id === selectedLayerId) || null,
     [layers, selectedLayerId],
+  );
+  const hasMainImage = useMemo(
+    () => layers.some((layer) => layer.type === 'image'),
+    [layers],
   );
 
   useEffect(() => {
@@ -133,17 +142,23 @@ function App() {
     });
   };
 
-  const addImageFromBlob = async (blob: Blob) => {
+  const addImageFromBlob = async (
+    blob: Blob,
+    options?: { promptForMainPhoto?: boolean },
+  ) => {
     const imageDataUrl = await readBlobAsDataUrl(blob);
-    await addImageLayerFromDataUrl(imageDataUrl);
+    await addImageLayerFromDataUrl(imageDataUrl, options);
   };
 
-  const addImageFromText = async (text: string) => {
+  const addImageFromText = async (
+    text: string,
+    options?: { promptForMainPhoto?: boolean },
+  ) => {
     const trimmed = text.trim();
     if (!trimmed) return false;
 
     if (trimmed.startsWith('data:image/')) {
-      await addImageLayerFromDataUrl(trimmed);
+      await addImageLayerFromDataUrl(trimmed, options);
       return true;
     }
 
@@ -155,13 +170,48 @@ function App() {
     const blob = await response.blob();
     if (!blob.type.startsWith('image/')) return false;
 
-    await addImageFromBlob(blob);
+    await addImageFromBlob(blob, options);
     return true;
   };
 
-  const addImageLayerFromDataUrl = async (dataUrl: string) => {
-    const image = await loadImage(dataUrl);
-    const fitScale = Math.max(stageSize.width / image.width, stageSize.height / image.height);
+  const finalizeMainPhotoLayer = (
+    image: HTMLImageElement,
+    dataUrl: string,
+    options: { mode: 'fit' | 'cover'; presetKey?: Preset } = { mode: 'fit' },
+  ) => {
+    const targetKey = options.presetKey || preset;
+    const target = getPresetByKey(targetKey);
+
+    const sourceRatio = image.width / image.height;
+    const targetRatio = target.width / target.height;
+    const crop = {
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+    };
+    let width = target.width;
+    let height = target.height;
+    let x = 0;
+    let y = 0;
+
+    if (options.mode === 'fit') {
+      const fitScale = Math.min(target.width / image.width, target.height / image.height);
+      width = image.width * fitScale;
+      height = image.height * fitScale;
+      x = (target.width - width) / 2;
+      y = (target.height - height) / 2;
+    } else {
+      if (sourceRatio > targetRatio) {
+        const cropWidth = (targetRatio / sourceRatio) * 100;
+        crop.width = cropWidth;
+        crop.x = (100 - cropWidth) / 2;
+      } else {
+        const cropHeight = (sourceRatio / targetRatio) * 100;
+        crop.height = cropHeight;
+        crop.y = (100 - cropHeight) / 2;
+      }
+    }
 
     const layer: Layer = {
       id: nanoid(),
@@ -170,26 +220,54 @@ function App() {
       image,
       naturalWidth: image.width,
       naturalHeight: image.height,
-      x: (stageSize.width - image.width * fitScale) / 2,
-      y: (stageSize.height - image.height * fitScale) / 2,
-      width: image.width * fitScale,
-      height: image.height * fitScale,
+      x,
+      y,
+      width,
+      height,
       rotation: 0,
-      crop: {
-        x: 0,
-        y: 0,
-        width: 100,
-        height: 100,
-      },
+      crop,
     } as Layer;
 
     setLayers((prev) => [...prev, layer]);
     setSelectedLayerId(layer.id);
   };
 
-  const addImageLayer = async (file: File) => {
+  const addImageLayerFromDataUrl = async (
+    dataUrl: string,
+    options?: { promptForMainPhoto?: boolean },
+  ) => {
+    const image = await loadImage(dataUrl);
+
+    const shouldPromptForMainPhoto =
+      options?.promptForMainPhoto && !hasMainImage && !pendingMainPhoto;
+
+    if (shouldPromptForMainPhoto) {
+      setPendingMainPhoto({ dataUrl, image });
+      return;
+    }
+
+    finalizeMainPhotoLayer(image, dataUrl, { mode: 'fit' });
+  };
+
+  const addImageLayer = async (file: File, options?: { promptForMainPhoto?: boolean }) => {
     const dataUrl = await readFileAsDataUrl(file);
-    await addImageLayerFromDataUrl(dataUrl);
+    await addImageLayerFromDataUrl(dataUrl, options);
+  };
+
+  const applyPendingMainPhoto = (presetChoice: Preset | null) => {
+    if (!pendingMainPhoto) return;
+
+    const options =
+      presetChoice === null
+        ? { mode: 'fit' as const }
+        : { mode: 'cover' as const, presetKey: presetChoice };
+
+    if (presetChoice && presetChoice !== preset) {
+      setPreset(presetChoice);
+    }
+
+    finalizeMainPhotoLayer(pendingMainPhoto.image, pendingMainPhoto.dataUrl, options);
+    setPendingMainPhoto(null);
   };
 
   const addTextLayer = (value = 'Новый текст') => {
@@ -316,8 +394,9 @@ function App() {
       return;
     }
 
-    for (const file of imageFiles) {
-      await addImageLayer(file);
+    for (const [index, file] of imageFiles.entries()) {
+      const shouldPrompt = !hasMainImage && index === 0 && !pendingMainPhoto;
+      await addImageLayer(file, { promptForMainPhoto: shouldPrompt });
     }
   };
 
@@ -363,7 +442,7 @@ function App() {
   };
 
   const parseClipboardTextAsImage = async (text: string) => {
-    const insertedAsImage = await addImageFromText(text);
+    const insertedAsImage = await addImageFromText(text, { promptForMainPhoto: !hasMainImage });
     if (insertedAsImage) return;
     await addTextToSelectionOrNewLayer(text);
   };
@@ -391,7 +470,7 @@ function App() {
         const file = imageItem.getAsFile();
         if (file) {
           event.preventDefault();
-          await addImageFromBlob(file);
+          await addImageFromBlob(file, { promptForMainPhoto: !hasMainImage });
           return;
         }
       }
@@ -401,7 +480,7 @@ function App() {
         const imageFromTag = /<img[^>]+src=["']([^"']+)["'][^>]*>/i.exec(html)?.[1];
         if (imageFromTag) {
           event.preventDefault();
-          if (await addImageFromText(imageFromTag)) {
+          if (await addImageFromText(imageFromTag, { promptForMainPhoto: !hasMainImage })) {
             return;
           }
         }
@@ -425,7 +504,7 @@ function App() {
   const handleUploadImage = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    await addImageLayer(file);
+    await addImageLayer(file, { promptForMainPhoto: !hasMainImage && !pendingMainPhoto });
     event.target.value = '';
   };
 
@@ -465,6 +544,13 @@ function App() {
       />
 
       <main className="workbench">
+        <ImagePresetModal
+          open={Boolean(pendingMainPhoto)}
+          presets={PRESETS}
+          onPick={applyPendingMainPhoto}
+          onClose={() => applyPendingMainPhoto(null)}
+        />
+
         <EditorCanvas
           containerRef={containerRef}
           stageRef={stageRef}

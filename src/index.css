@@ -134,6 +134,44 @@ canvas {
   font-size: 13px;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(3 5 16 / 55%);
+  display: grid;
+  place-items: center;
+  z-index: 60;
+}
+
+.modal-card {
+  width: min(90%, 430px);
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: #191f3f;
+  color: var(--text);
+  padding: 16px;
+  box-shadow: 0 16px 60px rgb(3 4 22 / 60%);
+}
+
+.modal-card h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+}
+
+.modal-card p {
+  margin: 0 0 12px;
+  color: var(--muted);
+}
+
+.modal-buttons {
+  display: grid;
+  gap: 8px;
+}
+
+.modal-buttons button.secondary {
+  background: linear-gradient(150deg, #30385f, #20294a);
+}
+
 .sidebar {
   border-radius: 18px;
   border: 1px solid var(--line);
