@@ -529,6 +529,7 @@ function App() {
     if (!layer || !(node instanceof Konva.Node)) return;
 
     const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
 
     node.scaleX(1);
     node.scaleY(1);
@@ -543,7 +544,6 @@ function App() {
         height: layer.height,
       });
     } else {
-      const scaleY = node.scaleY();
       const width = clamp(node.width() * scaleX, 24, stageSize.width * 3);
       const height = clamp(node.height() * scaleY, 24, stageSize.height * 3);
       updateLayer(id, {
@@ -685,6 +685,7 @@ function App() {
                     align={layer.align}
                     lineHeight={layer.lineHeight}
                     wrap="word"
+                    onTransform={(event) => handleTransform(layer.id, event)}
                     onClick={() => setSelectedLayerId(layer.id)}
                     onTap={() => setSelectedLayerId(layer.id)}
                     onDragEnd={(event) => handleDragEnd(layer.id, event)}
@@ -702,6 +703,11 @@ function App() {
                 rotateEnabled
                 ignoreStroke
                 keepRatio={selectedLayer?.type === 'image'}
+                enabledAnchors={
+                  selectedLayer?.type === 'text'
+                    ? ['middle-left', 'middle-right']
+                    : undefined
+                }
               />
             </KonvaLayer>
           </Stage>
