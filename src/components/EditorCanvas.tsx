@@ -46,7 +46,7 @@ export function EditorCanvas({
 
   return (
     <section
-      className="canvas-wrap"
+      className="canvas-shell"
       ref={containerRef}
       onDragOver={(event) => {
         event.preventDefault();
@@ -54,86 +54,120 @@ export function EditorCanvas({
       }}
       onDrop={handleDrop}
     >
-      <Stage
-        ref={stageRef}
-        width={width}
-        height={height}
-        scaleX={scale}
-        scaleY={scale}
-        onMouseDown={onCanvasMouseDown}
-        onTouchStart={onCanvasMouseDown}
-      >
-        <KonvaLayer>
-          {layers.map((layer) =>
-            layer.type === 'image' ? (
-              <KonvaImage
-                key={layer.id}
-                x={layer.x}
-                y={layer.y}
-                image={layer.image}
-                draggable
-                rotation={layer.rotation}
-                width={layer.width}
-                height={layer.height}
-                crop={{
-                  x: (layer.crop.x / 100) * layer.naturalWidth,
-                  y: (layer.crop.y / 100) * layer.naturalHeight,
-                  width: (layer.crop.width / 100) * layer.naturalWidth,
-                  height: (layer.crop.height / 100) * layer.naturalHeight,
-                }}
-                onClick={() => onSelectLayer(layer.id)}
-                onTap={() => onSelectLayer(layer.id)}
-                onDragEnd={(event) => onDragEnd(layer.id, event)}
-                onTransformEnd={(event) => onTransform(layer.id, event)}
-                ref={(node) => {
-                  if (node) {
-                    nodeRefs.current[layer.id] = node;
-                  }
-                }}
-              />
-            ) : (
-              <Text
-                key={layer.id}
-                x={layer.x}
-                y={layer.y}
-                text={layer.text}
-                width={layer.width}
-                height={layer.height}
-                draggable
-                rotation={layer.rotation}
-                fontFamily={layer.fontFamily}
-                fontSize={layer.fontSize}
-                fill={layer.color}
-                align={layer.align}
-                lineHeight={layer.lineHeight}
-                wrap="word"
-                onTransform={(event) => onTransform(layer.id, event)}
-                onClick={() => onSelectLayer(layer.id)}
-                onTap={() => onSelectLayer(layer.id)}
-                onDragEnd={(event) => onDragEnd(layer.id, event)}
-                onTransformEnd={(event) => onTransform(layer.id, event)}
-                ref={(node) => {
-                  if (node) {
-                    nodeRefs.current[layer.id] = node;
-                  }
-                }}
-              />
-            ),
-          )}
-          <Transformer
-            ref={transformerRef}
-            rotateEnabled
-            ignoreStroke
-            keepRatio={selectedLayer?.type === 'image'}
-            enabledAnchors={
-              selectedLayer?.type === 'text'
-                ? ['middle-left', 'middle-right']
-                : undefined
-            }
-          />
-        </KonvaLayer>
-      </Stage>
-      <p className="hint">Нажмите на область без слоя, чтобы снять выделение.</p>
+      <div className="canvas-wrap">
+        <div className="canvas-stage">
+          <div
+            className="canvas-stage-frame"
+            style={{
+              width: `${Math.round(width * scale)}px`,
+              height: `${Math.round(height * scale)}px`,
+            }}
+          >
+            <div
+              className="canvas-stage-inner"
+              style={{
+                width: `${width}px`,
+                height: `${height}px`,
+                transform: `scale(${scale})`,
+              }}
+            >
+              <Stage
+                ref={stageRef}
+                width={width}
+                height={height}
+                onMouseDown={onCanvasMouseDown}
+                onTouchStart={onCanvasMouseDown}
+              >
+                <KonvaLayer>
+                  {layers.map((layer) =>
+                    layer.type === 'image' ? (
+                      <KonvaImage
+                        key={layer.id}
+                        x={layer.x}
+                        y={layer.y}
+                        image={layer.image}
+                        draggable
+                        rotation={layer.rotation}
+                        width={layer.width}
+                        height={layer.height}
+                        crop={{
+                          x: (layer.crop.x / 100) * layer.naturalWidth,
+                          y: (layer.crop.y / 100) * layer.naturalHeight,
+                          width: (layer.crop.width / 100) * layer.naturalWidth,
+                          height: (layer.crop.height / 100) * layer.naturalHeight,
+                        }}
+                        onClick={() => onSelectLayer(layer.id)}
+                        onTap={() => onSelectLayer(layer.id)}
+                        onDragEnd={(event) => onDragEnd(layer.id, event)}
+                        onTransformEnd={(event) => onTransform(layer.id, event)}
+                        ref={(node) => {
+                          if (node) {
+                            nodeRefs.current[layer.id] = node;
+                          }
+                        }}
+                      />
+                    ) : (
+                      <Text
+                        key={layer.id}
+                        x={layer.x}
+                        y={layer.y}
+                        text={layer.text}
+                        width={layer.width}
+                        height={layer.height}
+                        draggable
+                        rotation={layer.rotation}
+                        fontFamily={layer.fontFamily}
+                        fontSize={layer.fontSize}
+                        fill={layer.color}
+                        align={layer.align}
+                        lineHeight={layer.lineHeight}
+                        wrap="word"
+                        onTransform={(event) => onTransform(layer.id, event)}
+                        onClick={() => onSelectLayer(layer.id)}
+                        onTap={() => onSelectLayer(layer.id)}
+                        onDragEnd={(event) => onDragEnd(layer.id, event)}
+                        onTransformEnd={(event) => onTransform(layer.id, event)}
+                        ref={(node) => {
+                          if (node) {
+                            nodeRefs.current[layer.id] = node;
+                          }
+                        }}
+                      />
+                    ),
+                  )}
+                  <Transformer
+                    ref={transformerRef}
+                    rotateEnabled
+                    ignoreStroke
+                    borderStroke="#d9683c"
+                    borderStrokeWidth={2}
+                    borderDash={[10, 6]}
+                    anchorFill="#fff8f0"
+                    anchorStroke="#9f4625"
+                    anchorStrokeWidth={2}
+                    anchorSize={14}
+                    anchorCornerRadius={999}
+                    rotateAnchorOffset={28}
+                    padding={10}
+                    keepRatio={selectedLayer?.type === 'image'}
+                    enabledAnchors={
+                      selectedLayer?.type === 'text'
+                        ? ['middle-left', 'middle-right']
+                        : undefined
+                    }
+                  />
+                </KonvaLayer>
+              </Stage>
+            </div>
+          </div>
+        </div>
+
+        <p className="hint">
+          {layers.length === 0
+            ? `Пустая канва ${width} x ${height}. Перетащите фото сюда, вставьте из буфера или нажмите “Загрузить фото”.`
+            : `${width} x ${height} · ${Math.round(scale * 100)}% · кликните по пустой области, чтобы снять выделение.`}
+        </p>
+      </div>
     </section>
   );
 }

@@ -3,7 +3,8 @@ import Konva from 'konva';
 import { nanoid } from 'nanoid';
 
 import { TopBar } from './components/TopBar';
-import { ImagePresetModal } from './components/ImagePresetModal';
+import { ActionRail } from './components/ActionRail';
+import { ImagePicker } from './components/ImagePicker';
 import { EditorCanvas } from './components/EditorCanvas';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import {
@@ -29,7 +30,7 @@ function App() {
   const [fonts, setFonts] = useState<UploadedFont[]>([DEFAULT_FONT]);
   const [stageScale, setStageScale] = useState(1);
   const [isHydrated, setIsHydrated] = useState(false);
-  const [pendingMainPhoto, setPendingMainPhoto] = useState<{
+  const [pendingImage, setPendingImage] = useState<{
     dataUrl: string;
     image: HTMLImageElement;
   } | null>(null);
@@ -47,21 +48,15 @@ function App() {
     () => layers.find((layer) => layer.id === selectedLayerId) || null,
     [layers, selectedLayerId],
   );
-  const hasMainImage = useMemo(
-    () => layers.some((layer) => layer.type === 'image'),
-    [layers],
-  );
 
   useEffect(() => {
     const resize = () => {
       const wrapper = containerRef.current;
       if (!wrapper) return;
 
+      const wrapperBounds = wrapper.getBoundingClientRect();
       const availableWidth = Math.max(280, wrapper.clientWidth - 24);
-      const availableHeight = Math.max(
-        320,
-        window.innerHeight - (window.innerWidth >= 980 ? 220 : 260),
-      );
+      const availableHeight = Math.max(220, window.innerHeight - wrapperBounds.top - 44);
 
       const scale = Math.min(
         availableWidth / stageSize.width,
@@ -142,23 +137,17 @@ function App() {
     });
   };
 
-  const addImageFromBlob = async (
-    blob: Blob,
-    options?: { promptForMainPhoto?: boolean },
-  ) => {
+  const addImageFromBlob = async (blob: Blob) => {
     const imageDataUrl = await readBlobAsDataUrl(blob);
-    await addImageLayerFromDataUrl(imageDataUrl, options);
+    await addImageLayerFromDataUrl(imageDataUrl);
   };
 
-  const addImageFromText = async (
-    text: string,
-    options?: { promptForMainPhoto?: boolean },
-  ) => {
+  const addImageFromText = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return false;
 
     if (trimmed.startsWith('data:image/')) {
-      await addImageLayerFromDataUrl(trimmed, options);
+      await addImageLayerFromDataUrl(trimmed);
       return true;
     }
 
@@ -170,30 +159,31 @@ function App() {
     const blob = await response.blob();
     if (!blob.type.startsWith('image/')) return false;
 
-    await addImageFromBlob(blob, options);
+    await addImageFromBlob(blob);
     return true;
   };
 
   const finalizeMainPhotoLayer = (
     image: HTMLImageElement,
     dataUrl: string,
-    options: { mode: 'fit' | 'cover'; presetKey?: Preset } = { mode: 'fit' },
+    options: {
+      presetKey: Preset;
+      mode: 'fit' | 'cover';
+      crop?: ImageCrop;
+    },
   ) => {
-    const targetKey = options.presetKey || preset;
+    const targetKey = options.presetKey;
     const target = getPresetByKey(targetKey);
-
-    const sourceRatio = image.width / image.height;
-    const targetRatio = target.width / target.height;
-    const crop = {
+    let width = target.width;
+    let height = target.height;
+    let x = 0;
+    let y = 0;
+    const crop = options.crop || {
       x: 0,
       y: 0,
       width: 100,
       height: 100,
     };
-    let width = target.width;
-    let height = target.height;
-    let x = 0;
-    let y = 0;
 
     if (options.mode === 'fit') {
       const fitScale = Math.min(target.width / image.width, target.height / image.height);
@@ -201,18 +191,7 @@ function App() {
       height = image.height * fitScale;
       x = (target.width - width) / 2;
       y = (target.height - height) / 2;
-    } else {
-      if (sourceRatio > targetRatio) {
-        const cropWidth = (targetRatio / sourceRatio) * 100;
-        crop.width = cropWidth;
-        crop.x = (100 - cropWidth) / 2;
-      } else {
-        const cropHeight = (sourceRatio / targetRatio) * 100;
-        crop.height = cropHeight;
-        crop.y = (100 - cropHeight) / 2;
-      }
     }
-
     const layer: Layer = {
       id: nanoid(),
       type: 'image',
@@ -232,42 +211,39 @@ function App() {
     setSelectedLayerId(layer.id);
   };
 
-  const addImageLayerFromDataUrl = async (
-    dataUrl: string,
-    options?: { promptForMainPhoto?: boolean },
-  ) => {
+  const addImageLayerFromDataUrl = async (dataUrl: string) => {
+    if (pendingImage) return;
+
     const image = await loadImage(dataUrl);
-
-    const shouldPromptForMainPhoto =
-      options?.promptForMainPhoto && !hasMainImage && !pendingMainPhoto;
-
-    if (shouldPromptForMainPhoto) {
-      setPendingMainPhoto({ dataUrl, image });
-      return;
-    }
-
-    finalizeMainPhotoLayer(image, dataUrl, { mode: 'fit' });
+    setPendingImage({ dataUrl, image });
   };
 
-  const addImageLayer = async (file: File, options?: { promptForMainPhoto?: boolean }) => {
+  const addImageLayer = async (file: File) => {
     const dataUrl = await readFileAsDataUrl(file);
-    await addImageLayerFromDataUrl(dataUrl, options);
+    await addImageLayerFromDataUrl(dataUrl);
   };
 
-  const applyPendingMainPhoto = (presetChoice: Preset | null) => {
-    if (!pendingMainPhoto) return;
+  const applyPendingImage = ({
+    preset: pickedPreset,
+    mode,
+    crop,
+  }: {
+    preset: Preset;
+    mode: 'cover' | 'fit';
+    crop: ImageCrop;
+  }) => {
+    if (!pendingImage) return;
 
-    const options =
-      presetChoice === null
-        ? { mode: 'fit' as const }
-        : { mode: 'cover' as const, presetKey: presetChoice };
-
-    if (presetChoice && presetChoice !== preset) {
-      setPreset(presetChoice);
+    if (pickedPreset !== preset) {
+      setPreset(pickedPreset);
     }
 
-    finalizeMainPhotoLayer(pendingMainPhoto.image, pendingMainPhoto.dataUrl, options);
-    setPendingMainPhoto(null);
+    finalizeMainPhotoLayer(pendingImage.image, pendingImage.dataUrl, {
+      presetKey: pickedPreset,
+      mode,
+      crop,
+    });
+    setPendingImage(null);
   };
 
   const addTextLayer = (value = 'Новый текст') => {
@@ -280,7 +256,7 @@ function App() {
       fontSize: 84,
       lineHeight: 1.2,
       align: 'left',
-      color: '#ffffff',
+      color: '#241d17',
       x: stageSize.width * 0.08,
       y: stageSize.height * 0.12,
       width: stageSize.width * 0.82,
@@ -394,9 +370,9 @@ function App() {
       return;
     }
 
-    for (const [index, file] of imageFiles.entries()) {
-      const shouldPrompt = !hasMainImage && index === 0 && !pendingMainPhoto;
-      await addImageLayer(file, { promptForMainPhoto: shouldPrompt });
+      for (const file of imageFiles) {
+      if (pendingImage) return;
+      await addImageLayer(file);
     }
   };
 
@@ -442,7 +418,7 @@ function App() {
   };
 
   const parseClipboardTextAsImage = async (text: string) => {
-    const insertedAsImage = await addImageFromText(text, { promptForMainPhoto: !hasMainImage });
+    const insertedAsImage = await addImageFromText(text);
     if (insertedAsImage) return;
     await addTextToSelectionOrNewLayer(text);
   };
@@ -470,7 +446,8 @@ function App() {
         const file = imageItem.getAsFile();
         if (file) {
           event.preventDefault();
-          await addImageFromBlob(file, { promptForMainPhoto: !hasMainImage });
+          if (pendingImage) return;
+          await addImageFromBlob(file);
           return;
         }
       }
@@ -480,7 +457,7 @@ function App() {
         const imageFromTag = /<img[^>]+src=["']([^"']+)["'][^>]*>/i.exec(html)?.[1];
         if (imageFromTag) {
           event.preventDefault();
-          if (await addImageFromText(imageFromTag, { promptForMainPhoto: !hasMainImage })) {
+          if (await addImageFromText(imageFromTag)) {
             return;
           }
         }
@@ -504,7 +481,11 @@ function App() {
   const handleUploadImage = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
-    await addImageLayer(file, { promptForMainPhoto: !hasMainImage && !pendingMainPhoto });
+    if (pendingImage) {
+      event.target.value = '';
+      return;
+    }
+    await addImageLayer(file);
     event.target.value = '';
   };
 
@@ -531,42 +512,64 @@ function App() {
   return (
     <div className="app">
       <TopBar
-        preset={preset}
-        presets={PRESETS}
-        onPresetChange={handlePresetChange}
-        onUploadImage={() => imageInputRef.current?.click()}
-        onAddText={addTextLayer}
-        onUploadFont={() => fontInputRef.current?.click()}
-        onDeleteSelected={removeSelectedLayer}
-        onExport={handleExport}
-        isExportDisabled={layers.length === 0}
-        isDeleteDisabled={!selectedLayer}
+        selectedLayerType={selectedLayer?.type ?? null}
       />
 
       <main className="workbench">
-        <ImagePresetModal
-          open={Boolean(pendingMainPhoto)}
+        <ImagePicker
+          open={Boolean(pendingImage)}
+          image={
+            pendingImage
+              ? { src: pendingImage.dataUrl, width: pendingImage.image.width, height: pendingImage.image.height }
+              : { src: '', width: 1, height: 1 }
+          }
           presets={PRESETS}
-          onPick={applyPendingMainPhoto}
-          onClose={() => applyPendingMainPhoto(null)}
+          initialPreset={preset}
+          onApply={applyPendingImage}
+          onCancel={() => setPendingImage(null)}
         />
 
-        <EditorCanvas
-          containerRef={containerRef}
-          stageRef={stageRef}
-          layers={layers}
-          width={stageSize.width}
-          height={stageSize.height}
-          scale={stageScale}
-          selectedLayer={selectedLayer}
-          onCanvasMouseDown={handleCanvasMouseDown}
-          onSelectLayer={setSelectedLayerId}
-          onDragEnd={handleDragEnd}
-          onTransform={handleTransform}
-          onDropFiles={handleCanvasDrop}
-          transformerRef={transformerRef}
-          nodeRefs={nodeRefs}
+        <ActionRail
+          onUploadImage={() => imageInputRef.current?.click()}
+          onAddText={addTextLayer}
+          onUploadFont={() => fontInputRef.current?.click()}
+          onDeleteSelected={removeSelectedLayer}
+          onExport={handleExport}
+          isDeleteDisabled={!selectedLayer}
+          isExportDisabled={layers.length === 0}
         />
+
+        <section className="canvas-column">
+          <div className="preset-strip" aria-label="Canvas presets">
+            {PRESETS.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                className={preset === item.key ? 'active' : 'ghost'}
+                onClick={() => handlePresetChange(item.key)}
+              >
+                {item.key === 'story' ? '9:16' : '4:5'}
+              </button>
+            ))}
+          </div>
+
+          <EditorCanvas
+            containerRef={containerRef}
+            stageRef={stageRef}
+            layers={layers}
+            width={stageSize.width}
+            height={stageSize.height}
+            scale={stageScale}
+            selectedLayer={selectedLayer}
+            onCanvasMouseDown={handleCanvasMouseDown}
+            onSelectLayer={setSelectedLayerId}
+            onDragEnd={handleDragEnd}
+            onTransform={handleTransform}
+            onDropFiles={handleCanvasDrop}
+            transformerRef={transformerRef}
+            nodeRefs={nodeRefs}
+          />
+        </section>
 
         <PropertiesPanel
           selectedLayer={selectedLayer}

@@ -1,66 +1,29 @@
-import { Preset, PresetDefinition } from '../editor/types';
-
 type TopBarProps = {
-  preset: Preset;
-  presets: PresetDefinition[];
-  onPresetChange: (preset: Preset) => void;
-  onUploadImage: () => void;
-  onAddText: () => void;
-  onUploadFont: () => void;
-  onDeleteSelected: () => void;
-  onExport: () => void;
-  isExportDisabled: boolean;
-  isDeleteDisabled: boolean;
+  selectedLayerType: 'image' | 'text' | null;
 };
 
-export function TopBar({
-  preset,
-  presets,
-  onPresetChange,
-  onUploadImage,
-  onAddText,
-  onUploadFont,
-  onDeleteSelected,
-  onExport,
-  isExportDisabled,
-  isDeleteDisabled,
-}: TopBarProps) {
+export function TopBar({ selectedLayerType }: TopBarProps) {
+  const selectedLabel =
+    selectedLayerType === 'image'
+      ? 'Фото'
+      : selectedLayerType === 'text'
+        ? 'Текст'
+        : 'Ничего';
+
   return (
     <header className="topbar">
-      <div className="brand">Stories Editor</div>
-      <div className="segment">
-        {presets.map((item) => (
-          <button
-            key={item.key}
-            type="button"
-            className={preset === item.key ? 'active' : ''}
-            onClick={() => onPresetChange(item.key)}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-      <div className="actions">
-        <button type="button" onClick={onUploadImage}>
-          Загрузить фото
-        </button>
-        <button type="button" onClick={onAddText}>
-          Добавить текст
-        </button>
-        <button type="button" onClick={onUploadFont}>
-          Загрузить шрифт (.ttf)
-        </button>
-        <button type="button" onClick={onDeleteSelected} disabled={isDeleteDisabled}>
-          Удалить
-        </button>
-        <button
-          type="button"
-          onClick={onExport}
-          disabled={isExportDisabled}
-          className="export"
-        >
-          Экспорт PNG
-        </button>
+      <div className="topbar-intro">
+        <div className="topbar-copy-block">
+          <span className="eyebrow">Header</span>
+          <p className="topbar-copy">
+            Быстрый редактор сторис: загружайте фото, ставьте текст, подключайте свои
+            `.ttf` и сразу экспортируйте готовый PNG.
+          </p>
+        </div>
+        <div className="topbar-brand-block">
+          <div className="brand">Witch And Stories</div>
+          <span className="selection-pill">Выбрано: {selectedLabel}</span>
+        </div>
       </div>
     </header>
   );
