@@ -267,27 +267,23 @@ function App() {
     if (!layer || !(node instanceof Konva.Node)) return;
 
     const scaleX = node.scaleX();
-    const scaleY = node.scaleY();
-    const width = clamp(node.width() * scaleX, 24, stageSize.width * 3);
-    const height = clamp(node.height() * scaleY, 24, stageSize.height * 3);
 
     node.scaleX(1);
     node.scaleY(1);
 
     if (layer.type === 'text') {
+      const width = clamp(node.width() * scaleX, 40, stageSize.width * 3);
       updateLayer(id, {
         x: node.x(),
         y: node.y(),
         rotation: node.rotation(),
         width,
-        height,
-        fontSize: clamp(
-          Math.round(layer.fontSize * Math.max(scaleX, scaleY)),
-          14,
-          220,
-        ),
+        height: layer.height,
       });
     } else {
+      const scaleY = node.scaleY();
+      const width = clamp(node.width() * scaleX, 24, stageSize.width * 3);
+      const height = clamp(node.height() * scaleY, 24, stageSize.height * 3);
       updateLayer(id, {
         x: node.x(),
         y: node.y(),
@@ -443,7 +439,7 @@ function App() {
                 ref={transformerRef}
                 rotateEnabled
                 ignoreStroke
-                keepRatio
+                keepRatio={selectedLayer?.type === 'image'}
               />
             </KonvaLayer>
           </Stage>
