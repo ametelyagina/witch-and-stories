@@ -447,6 +447,17 @@ canvas {
   color: var(--accent-deep);
 }
 
+.field-head-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: rgb(217 104 60 / 10%);
+  color: var(--accent-deep);
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .field-row {
   display: grid;
   grid-template-columns: 88px minmax(0, 1fr);
@@ -456,6 +467,62 @@ canvas {
 
 .field-compact {
   align-content: start;
+}
+
+.text-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.text-preset-button {
+  border-radius: 20px;
+  border: 1px solid rgb(197 176 153 / 78%);
+  background:
+    linear-gradient(180deg, rgb(255 251 246 / 95%), rgb(248 239 229 / 92%));
+  color: var(--ink);
+  padding: 14px;
+  min-height: 138px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  text-align: left;
+  box-shadow: none;
+}
+
+.text-preset-button:hover {
+  border-color: rgb(217 104 60 / 55%);
+  box-shadow: 0 12px 28px rgb(70 44 22 / 10%);
+}
+
+.text-preset-button--active {
+  border-color: rgb(217 104 60 / 58%);
+  background:
+    radial-gradient(circle at top right, rgb(243 200 178 / 45%), transparent 40%),
+    linear-gradient(180deg, rgb(255 248 240 / 98%), rgb(247 234 222 / 96%));
+  box-shadow: 0 16px 34px rgb(70 44 22 / 11%);
+}
+
+.text-preset-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-deep);
+}
+
+.text-preset-sample {
+  display: block;
+  font-size: 27px;
+  line-height: 1.02;
+  color: var(--ink);
+}
+
+.text-preset-description {
+  display: block;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--muted);
 }
 
 .modal-backdrop {
@@ -723,6 +790,10 @@ canvas {
   .ratio-switch,
   .mode-switch,
   .image-picker-sidebar {
+    grid-template-columns: 1fr;
+  }
+
+  .text-preset-grid {
     grid-template-columns: 1fr;
   }
 

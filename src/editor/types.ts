@@ -43,6 +43,7 @@ export type BaseLayer = {
 };
 
 export type TextAlign = 'left' | 'center' | 'right';
+export type TextFontStyle = 'normal' | 'bold' | 'italic' | 'bold italic';
 
 export type ImageLayer = BaseLayer & {
   type: 'image';
@@ -57,10 +58,13 @@ export type TextLayer = BaseLayer & {
   type: 'text';
   text: string;
   fontFamily: string;
+  fontStyle?: TextFontStyle;
+  letterSpacing?: number;
   fontSize: number;
   lineHeight: number;
   align: TextAlign;
   color: string;
+  stylePresetId?: string;
 };
 
 export type Layer = ImageLayer | TextLayer;

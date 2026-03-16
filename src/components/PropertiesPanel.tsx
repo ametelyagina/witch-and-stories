@@ -1,4 +1,5 @@
 import { ImageCrop, Layer, TextLayer, UploadedFont } from '../editor/types';
+import { getFontOptions, getTextStylePresetById, TEXT_STYLE_PRESETS } from '../editor/textPresets';
 
 function isTextLayer(layer: Layer): layer is TextLayer {
   return layer.type === 'text';
@@ -10,7 +11,6 @@ type PropertiesPanelProps = {
   isLast: boolean;
   onMoveLayer: (direction: 'backward' | 'forward') => void;
   onChange: (id: string, changes: Partial<Layer>) => void;
-  onAlignChange: (id: string, align: 'left' | 'center' | 'right') => void;
   onTextChange: (id: string, value: string) => void;
   onCropChange: (id: string, axis: keyof ImageCrop, value: number) => void;
   fonts: UploadedFont[];
@@ -22,7 +22,6 @@ export function PropertiesPanel({
   isLast,
   onMoveLayer,
   onChange,
-  onAlignChange,
   onTextChange,
   onCropChange,
   fonts,
@@ -33,6 +32,23 @@ export function PropertiesPanel({
       : selectedLayer?.type === 'text'
         ? 'Текст'
         : null;
+  const fontOptions = getFontOptions(fonts);
+
+  const applyTextChanges = (
+    layer: TextLayer,
+    changes: Partial<TextLayer>,
+    { preservePreset = false }: { preservePreset?: boolean } = {},
+  ) => {
+    onChange(
+      layer.id,
+      preservePreset
+        ? changes
+        : {
+            ...changes,
+            stylePresetId: undefined,
+          },
+    );
+  };
 
   return (
     <aside className="sidebar">
@@ -93,95 +109,113 @@ export function PropertiesPanel({
           </section>
 
           {isTextLayer(selectedLayer) ? (
-            <section className="panel-section">
-              <div className="panel-section-head">
-                <div>
-                  <h3>Типографика</h3>
-                  <p>Текст, шрифт, цвет и ритм набора.</p>
-                </div>
-              </div>
-
-              <div className="stack">
-                <div className="field">
-                  <div className="field-head">
-                    <label>Текст</label>
-                    <span>{selectedLayer.text.length} симв.</span>
+            <>
+              <section className="panel-section">
+                <div className="panel-section-head">
+                  <div>
+                    <h3>Шрифтовой пресет</h3>
+                    <p>Быстрые типографические наборы для сторис без ручной сборки.</p>
                   </div>
-                  <textarea
-                    value={selectedLayer.text}
-                    onChange={(event) => onTextChange(selectedLayer.id, event.target.value)}
-                  />
+                  <span className="field-head-badge">
+                    {getTextStylePresetById(selectedLayer.stylePresetId)?.label ?? 'Custom'}
+                  </span>
                 </div>
 
-                <div className="field">
-                  <div className="field-head">
-                    <label>Шрифт</label>
-                    <span>{fonts.length} доступно</span>
+                <div className="text-preset-grid">
+                  {TEXT_STYLE_PRESETS.map((preset) => {
+                    const isActive = selectedLayer.stylePresetId === preset.id;
+
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        className={`text-preset-button${isActive ? ' text-preset-button--active' : ''}`}
+                        onClick={() =>
+                          onChange(selectedLayer.id, {
+                            stylePresetId: preset.id,
+                            fontFamily: preset.family,
+                            fontStyle: preset.fontStyle,
+                            letterSpacing: preset.letterSpacing,
+                            fontSize: preset.fontSize,
+                            lineHeight: preset.lineHeight,
+                            align: preset.align,
+                            color: preset.color,
+                          })
+                        }
+                      >
+                        <span className="text-preset-label">{preset.label}</span>
+                        <span
+                          className="text-preset-sample"
+                          style={{
+                            fontFamily: preset.family,
+                            fontStyle: preset.fontStyle.includes('italic') ? 'italic' : 'normal',
+                            fontWeight: preset.fontStyle.includes('bold') ? 700 : 500,
+                            letterSpacing: `${preset.letterSpacing}px`,
+                          }}
+                        >
+                          {preset.sample}
+                        </span>
+                        <span className="text-preset-description">{preset.description}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section className="panel-section">
+                <div className="panel-section-head">
+                  <div>
+                    <h3>Типографика</h3>
+                    <p>Текст, шрифт, цвет и ритм набора.</p>
                   </div>
-                  <select
-                    value={selectedLayer.fontFamily}
-                    onChange={(event) =>
-                      onChange(selectedLayer.id, {
-                        fontFamily: event.target.value,
-                      })
-                    }
-                  >
-                    {fonts.map((font) => (
-                      <option key={font.id} value={font.family}>
-                        {font.name}
-                      </option>
-                    ))}
-                  </select>
                 </div>
 
-                <div className="field">
-                  <div className="field-head">
-                    <label>Размер</label>
-                    <span>{selectedLayer.fontSize}px</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="14"
-                    max="220"
-                    value={selectedLayer.fontSize}
-                    onChange={(event) =>
-                      onChange(selectedLayer.id, {
-                        fontSize: Number(event.target.value),
-                      })
-                    }
-                  />
-                </div>
-
-                <div className="field">
-                  <div className="field-head">
-                    <label>Межстрочный интервал</label>
-                    <span>{selectedLayer.lineHeight.toFixed(2)}</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.8"
-                    max="2.4"
-                    step="0.05"
-                    value={selectedLayer.lineHeight}
-                    onChange={(event) =>
-                      onChange(selectedLayer.id, {
-                        lineHeight: Number(event.target.value),
-                      })
-                    }
-                  />
-                </div>
-
-                <div className="field-row">
-                  <div className="field field-compact">
+                <div className="stack">
+                  <div className="field">
                     <div className="field-head">
-                      <label>Цвет</label>
+                      <label>Текст</label>
+                      <span>{selectedLayer.text.length} симв.</span>
+                    </div>
+                    <textarea
+                      value={selectedLayer.text}
+                      onChange={(event) => onTextChange(selectedLayer.id, event.target.value)}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <div className="field-head">
+                      <label>Шрифт</label>
+                      <span>{fontOptions.length} доступно</span>
+                    </div>
+                    <select
+                      value={selectedLayer.fontFamily}
+                      onChange={(event) =>
+                        applyTextChanges(selectedLayer, {
+                          fontFamily: event.target.value,
+                        })
+                      }
+                    >
+                      {fontOptions.map((font) => (
+                        <option key={font.id} value={font.family}>
+                          {font.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="field">
+                    <div className="field-head">
+                      <label>Размер</label>
+                      <span>{selectedLayer.fontSize}px</span>
                     </div>
                     <input
-                      type="color"
-                      value={selectedLayer.color}
+                      type="range"
+                      min="14"
+                      max="220"
+                      value={selectedLayer.fontSize}
                       onChange={(event) =>
-                        onChange(selectedLayer.id, {
-                          color: event.target.value,
+                        applyTextChanges(selectedLayer, {
+                          fontSize: Number(event.target.value),
                         })
                       }
                     />
@@ -189,25 +223,60 @@ export function PropertiesPanel({
 
                   <div className="field">
                     <div className="field-head">
-                      <label>Выравнивание</label>
+                      <label>Межстрочный интервал</label>
+                      <span>{selectedLayer.lineHeight.toFixed(2)}</span>
                     </div>
-                    <select
-                      value={selectedLayer.align}
+                    <input
+                      type="range"
+                      min="0.8"
+                      max="2.4"
+                      step="0.05"
+                      value={selectedLayer.lineHeight}
                       onChange={(event) =>
-                        onAlignChange(
-                          selectedLayer.id,
-                          event.target.value as 'left' | 'center' | 'right',
-                        )
+                        applyTextChanges(selectedLayer, {
+                          lineHeight: Number(event.target.value),
+                        })
                       }
-                    >
-                      <option value="left">Слева</option>
-                      <option value="center">По центру</option>
-                      <option value="right">Справа</option>
-                    </select>
+                    />
+                  </div>
+
+                  <div className="field-row">
+                    <div className="field field-compact">
+                      <div className="field-head">
+                        <label>Цвет</label>
+                      </div>
+                      <input
+                        type="color"
+                        value={selectedLayer.color}
+                        onChange={(event) =>
+                          applyTextChanges(selectedLayer, {
+                            color: event.target.value,
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div className="field">
+                      <div className="field-head">
+                        <label>Выравнивание</label>
+                      </div>
+                      <select
+                        value={selectedLayer.align}
+                        onChange={(event) =>
+                          applyTextChanges(selectedLayer, {
+                            align: event.target.value as 'left' | 'center' | 'right',
+                          })
+                        }
+                      >
+                        <option value="left">Слева</option>
+                        <option value="center">По центру</option>
+                        <option value="right">Справа</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </section>
+              </section>
+            </>
           ) : (
             <section className="panel-section">
               <div className="panel-section-head">

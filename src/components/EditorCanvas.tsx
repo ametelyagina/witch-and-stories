@@ -117,9 +117,11 @@ export function EditorCanvas({
                         draggable
                         rotation={layer.rotation}
                         fontFamily={layer.fontFamily}
+                        fontStyle={layer.fontStyle ?? 'normal'}
                         fontSize={layer.fontSize}
                         fill={layer.color}
                         align={layer.align}
+                        letterSpacing={layer.letterSpacing ?? 0}
                         lineHeight={layer.lineHeight}
                         wrap="word"
                         onTransform={(event) => onTransform(layer.id, event)}

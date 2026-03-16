@@ -7,6 +7,7 @@ import {
   PersistedImageLayer,
   UploadedFont,
 } from '../editor/types';
+import { isBuiltInFontFamily } from '../editor/textPresets';
 import { loadImage } from './media';
 
 type PersistedEnvelope = {
@@ -103,19 +104,29 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
     const textLayer = value as {
       text?: unknown;
       fontFamily?: unknown;
+      fontStyle?: unknown;
+      letterSpacing?: unknown;
       fontSize?: unknown;
       lineHeight?: unknown;
       align?: unknown;
       color?: unknown;
+      stylePresetId?: unknown;
     };
 
     if (
       typeof textLayer.text !== 'string' ||
       typeof textLayer.fontFamily !== 'string' ||
+      (textLayer.fontStyle !== undefined &&
+        textLayer.fontStyle !== 'normal' &&
+        textLayer.fontStyle !== 'bold' &&
+        textLayer.fontStyle !== 'italic' &&
+        textLayer.fontStyle !== 'bold italic') ||
+      (textLayer.letterSpacing !== undefined && typeof textLayer.letterSpacing !== 'number') ||
       typeof textLayer.fontSize !== 'number' ||
       typeof textLayer.lineHeight !== 'number' ||
       (textLayer.align !== 'left' && textLayer.align !== 'center' && textLayer.align !== 'right') ||
-      typeof textLayer.color !== 'string'
+      typeof textLayer.color !== 'string' ||
+      (textLayer.stylePresetId !== undefined && typeof textLayer.stylePresetId !== 'string')
     ) {
       return null;
     }
@@ -130,10 +141,13 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
       rotation: layer.rotation,
       text: textLayer.text,
       fontFamily: textLayer.fontFamily,
+      fontStyle: textLayer.fontStyle,
+      letterSpacing: textLayer.letterSpacing,
       fontSize: textLayer.fontSize,
       lineHeight: textLayer.lineHeight,
       align: textLayer.align,
       color: textLayer.color,
+      stylePresetId: textLayer.stylePresetId,
     };
   }
 
@@ -228,7 +242,7 @@ export const readState = async (): Promise<EditorPersistedState | null> => {
         if (layer.type === 'text') {
           return {
             ...layer,
-            fontFamily: fontFamilies.has(layer.fontFamily)
+            fontFamily: fontFamilies.has(layer.fontFamily) || isBuiltInFontFamily(layer.fontFamily)
               ? layer.fontFamily
               : DEFAULT_FONT.family,
           };

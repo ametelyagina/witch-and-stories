@@ -15,6 +15,7 @@ import {
   Preset,
   PRESETS,
 } from './editor/types';
+import { DEFAULT_TEXT_STYLE_PRESET_ID, getTextStylePresetById } from './editor/textPresets';
 import { readFileAsDataUrl, loadImage } from './utils/media';
 import { clamp } from './utils/math';
 import { readState, saveState } from './utils/storage';
@@ -41,6 +42,7 @@ function App() {
   const nodeRefs = useRef<Record<string, Konva.Node>>({});
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const fontInputRef = useRef<HTMLInputElement | null>(null);
+  const defaultTextPreset = getTextStylePresetById(DEFAULT_TEXT_STYLE_PRESET_ID);
 
   const stageSize = useMemo(() => getPresetByKey(preset), [preset]);
 
@@ -252,11 +254,14 @@ function App() {
       id,
       type: 'text',
       text: value,
-      fontFamily: fonts[0].family,
-      fontSize: 84,
-      lineHeight: 1.2,
-      align: 'left',
-      color: '#241d17',
+      fontFamily: defaultTextPreset?.family ?? fonts[0].family,
+      fontStyle: defaultTextPreset?.fontStyle ?? 'bold',
+      letterSpacing: defaultTextPreset?.letterSpacing ?? 0,
+      fontSize: defaultTextPreset?.fontSize ?? 84,
+      lineHeight: defaultTextPreset?.lineHeight ?? 1.2,
+      align: defaultTextPreset?.align ?? 'left',
+      color: defaultTextPreset?.color ?? '#241d17',
+      stylePresetId: defaultTextPreset?.id,
       x: stageSize.width * 0.08,
       y: stageSize.height * 0.12,
       width: stageSize.width * 0.82,
@@ -282,10 +287,6 @@ function App() {
       [updated[index], updated[target]] = [updated[target], updated[index]];
       return updated;
     });
-  };
-
-  const updateTextAlign = (id: string, align: 'left' | 'center' | 'right') => {
-    updateLayer(id, { align });
   };
 
   const updateTextField = (id: string, text: string) => {
@@ -579,7 +580,6 @@ function App() {
           isLast={Boolean(selectedLayer && layers[layers.length - 1]?.id === selectedLayer.id)}
           onMoveLayer={moveLayer}
           onChange={updateLayer}
-          onAlignChange={updateTextAlign}
           onTextChange={updateTextField}
           onCropChange={updateImageCrop}
           fonts={fonts}
