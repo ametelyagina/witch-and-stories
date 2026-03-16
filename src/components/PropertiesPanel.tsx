@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useState } from 'react';
+
 import { ImageCrop, Layer, TextLayer, UploadedFont } from '../editor/types';
 import { getFontOptions, getTextStylePresetById, TEXT_STYLE_PRESETS } from '../editor/textPresets';
 
@@ -16,6 +18,8 @@ type PropertiesPanelProps = {
   fonts: UploadedFont[];
 };
 
+type PanelSectionId = 'transform' | 'preset' | 'typography' | 'crop';
+
 export function PropertiesPanel({
   selectedLayer,
   isFirst,
@@ -26,6 +30,27 @@ export function PropertiesPanel({
   onCropChange,
   fonts,
 }: PropertiesPanelProps) {
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === 'undefined' ? 1280 : window.innerWidth,
+  );
+  const [activeSection, setActiveSection] = useState<PanelSectionId>('transform');
+
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    handleResize();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedLayer) {
+      setActiveSection('transform');
+      return;
+    }
+
+    setActiveSection(selectedLayer.type === 'text' ? 'typography' : 'crop');
+  }, [selectedLayer?.id, selectedLayer?.type]);
+
   const layerLabel =
     selectedLayer?.type === 'image'
       ? 'Фото'
@@ -33,6 +58,23 @@ export function PropertiesPanel({
         ? 'Текст'
         : null;
   const fontOptions = getFontOptions(fonts);
+  const isCompactLayout = viewportWidth <= 720;
+  const sectionTabs = useMemo(() => {
+    if (!selectedLayer) {
+      return [];
+    }
+
+    return isTextLayer(selectedLayer)
+      ? [
+          { id: 'typography' as const, label: 'Текст' },
+          { id: 'preset' as const, label: 'Пресет' },
+          { id: 'transform' as const, label: 'Слой' },
+        ]
+      : [
+          { id: 'crop' as const, label: 'Кадр' },
+          { id: 'transform' as const, label: 'Слой' },
+        ];
+  }, [selectedLayer]);
 
   const applyTextChanges = (
     layer: TextLayer,
@@ -52,7 +94,7 @@ export function PropertiesPanel({
 
   return (
     <aside className="sidebar">
-      <div className="sidebar-head">
+        <div className="sidebar-head">
         <div>
           <p className="eyebrow">Tools</p>
           <h2>{selectedLayer ? 'Параметры слоя' : 'Параметры'}</h2>
@@ -72,7 +114,27 @@ export function PropertiesPanel({
         </div>
       ) : (
         <>
-          <section className="panel-section">
+          {isCompactLayout ? (
+            <div className="panel-tabs" role="tablist" aria-label="Мобильные настройки слоя">
+              {sectionTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  className={activeSection === tab.id ? 'active panel-tab' : 'ghost panel-tab'}
+                  aria-selected={activeSection === tab.id}
+                  onClick={() => setActiveSection(tab.id)}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <section
+            className={`panel-section${isCompactLayout ? ' panel-section--mobile' : ''}`}
+            hidden={isCompactLayout && activeSection !== 'transform'}
+          >
             <div className="panel-section-head">
               <div>
                 <h3>Трансформация</h3>
@@ -110,7 +172,10 @@ export function PropertiesPanel({
 
           {isTextLayer(selectedLayer) ? (
             <>
-              <section className="panel-section">
+              <section
+                className={`panel-section${isCompactLayout ? ' panel-section--mobile' : ''}`}
+                hidden={isCompactLayout && activeSection !== 'preset'}
+              >
                 <div className="panel-section-head">
                   <div>
                     <h3>Шрифтовой пресет</h3>
@@ -162,7 +227,10 @@ export function PropertiesPanel({
                 </div>
               </section>
 
-              <section className="panel-section">
+              <section
+                className={`panel-section${isCompactLayout ? ' panel-section--mobile' : ''}`}
+                hidden={isCompactLayout && activeSection !== 'typography'}
+              >
                 <div className="panel-section-head">
                   <div>
                     <h3>Типографика</h3>
@@ -278,7 +346,10 @@ export function PropertiesPanel({
               </section>
             </>
           ) : (
-            <section className="panel-section">
+            <section
+              className={`panel-section${isCompactLayout ? ' panel-section--mobile' : ''}`}
+              hidden={isCompactLayout && activeSection !== 'crop'}
+            >
               <div className="panel-section-head">
                 <div>
                   <h3>Кадр</h3>

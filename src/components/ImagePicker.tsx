@@ -9,6 +9,8 @@ type PickerImage = {
   height: number;
 };
 
+type ImagePickerPanelId = 'format' | 'placement' | 'zoom';
+
 type ImagePickerProps = {
   open: boolean;
   image: PickerImage;
@@ -59,6 +61,7 @@ export function ImagePicker({
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedArea, setCroppedArea] = useState<ImageCrop>(FULL_IMAGE_CROP);
+  const [activePanel, setActivePanel] = useState<ImagePickerPanelId>('format');
 
   useEffect(() => {
     if (!open) {
@@ -70,6 +73,7 @@ export function ImagePicker({
     setCrop({ x: 0, y: 0 });
     setZoom(1);
     setCroppedArea(FULL_IMAGE_CROP);
+    setActivePanel('format');
   }, [image.src, initialPreset, open]);
 
   useEffect(() => {
@@ -118,8 +122,8 @@ export function ImagePicker({
         Math.max(
           240,
           Math.min(
-            isCompactLayout ? viewport.width - 72 : viewport.width - 520,
-            (viewport.height - (isCompactLayout ? 420 : 250)) * aspect,
+            isCompactLayout ? viewport.width - 48 : viewport.width - 520,
+            (viewport.height - (isCompactLayout ? 250 : 250)) * aspect,
             isCompactLayout ? 420 : 520,
           ),
         ),
@@ -215,7 +219,39 @@ export function ImagePicker({
           </div>
 
           <aside className="image-picker-sidebar">
-            <section className="image-picker-panel">
+            {isCompactLayout ? (
+              <div className="image-picker-mobile-tabs" role="tablist" aria-label="Секции настройки фото">
+                <button
+                  type="button"
+                  role="tab"
+                  className={activePanel === 'format' ? 'active' : 'ghost'}
+                  aria-selected={activePanel === 'format'}
+                  onClick={() => setActivePanel('format')}
+                >
+                  Формат
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className={activePanel === 'placement' ? 'active' : 'ghost'}
+                  aria-selected={activePanel === 'placement'}
+                  onClick={() => setActivePanel('placement')}
+                >
+                  Посадка
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className={activePanel === 'zoom' ? 'active' : 'ghost'}
+                  aria-selected={activePanel === 'zoom'}
+                  onClick={() => setActivePanel('zoom')}
+                >
+                  Масштаб
+                </button>
+              </div>
+            ) : null}
+
+            <section className="image-picker-panel" hidden={isCompactLayout && activePanel !== 'format'}>
               <div className="image-picker-panel-head">
                 <span className="eyebrow">Format</span>
                 <h3>Куда готовим</h3>
@@ -234,7 +270,7 @@ export function ImagePicker({
               </div>
             </section>
 
-            <section className="image-picker-panel">
+            <section className="image-picker-panel" hidden={isCompactLayout && activePanel !== 'placement'}>
               <div className="image-picker-panel-head">
                 <span className="eyebrow">Placement</span>
                 <h3>Как посадить</h3>
@@ -257,7 +293,7 @@ export function ImagePicker({
               </div>
             </section>
 
-            <section className="image-picker-panel">
+            <section className="image-picker-panel" hidden={isCompactLayout && activePanel !== 'zoom'}>
               <div className="image-picker-panel-head image-picker-panel-head--inline">
                 <div>
                   <span className="eyebrow">Zoom</span>
@@ -277,16 +313,16 @@ export function ImagePicker({
                 />
               </label>
             </section>
-
-            <div className="modal-buttons image-picker-actions">
-              <button type="button" className="secondary" onClick={onCancel}>
-                Отмена
-              </button>
-              <button type="button" onClick={handleApply}>
-                Использовать фото
-              </button>
-            </div>
           </aside>
+        </div>
+
+        <div className="modal-buttons image-picker-actions">
+          <button type="button" className="secondary" onClick={onCancel}>
+            Отмена
+          </button>
+          <button type="button" onClick={handleApply}>
+            Использовать фото
+          </button>
         </div>
       </section>
     </div>

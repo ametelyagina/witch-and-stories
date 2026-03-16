@@ -58,13 +58,12 @@ function App() {
 
       const wrapperBounds = wrapper.getBoundingClientRect();
       const availableWidth = Math.max(280, wrapper.clientWidth - 24);
-      const availableHeight = Math.max(220, window.innerHeight - wrapperBounds.top - 44);
+      const isStackedWorkbench = window.innerWidth <= 1120;
+      const availableHeight = isStackedWorkbench
+        ? stageSize.height
+        : Math.max(220, window.innerHeight - wrapperBounds.top - 44);
 
-      const scale = Math.min(
-        availableWidth / stageSize.width,
-        availableHeight / stageSize.height,
-        1,
-      );
+      const scale = Math.min(availableWidth / stageSize.width, availableHeight / stageSize.height, 1);
       setStageScale(Math.max(0.15, scale));
     };
 
