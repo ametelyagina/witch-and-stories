@@ -1,4 +1,5 @@
 import { CSSProperties, useEffect, useRef } from 'react';
+import { flushSync } from 'react-dom';
 
 import { Layer, TextAlign, TextLayer } from '../editor/types';
 import { buildTextHighlightRects, DEFAULT_TEXT_BACKGROUND_COLOR } from '../editor/textHighlight';
@@ -85,6 +86,28 @@ export function EditorCanvas({
   onDropFiles,
 }: EditorCanvasProps) {
   const textEditorRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const focusInlineEditor = () => {
+    const textarea = textEditorRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    textarea.focus({ preventScroll: true });
+    const length = textarea.value.length;
+    textarea.setSelectionRange(length, length);
+  };
+
+  const openInlineEditor = (id: string) => {
+    flushSync(() => {
+      onStartEditingText(id);
+    });
+
+    requestAnimationFrame(() => {
+      focusInlineEditor();
+    });
+  };
+
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     const files = Array.from(event.dataTransfer.files);
@@ -104,11 +127,11 @@ export function EditorCanvas({
       return;
     }
 
-    textEditorRef.current.focus();
-    textEditorRef.current.setSelectionRange(
-      textEditorRef.current.value.length,
-      textEditorRef.current.value.length,
-    );
+    const animationFrameId = window.requestAnimationFrame(() => {
+      focusInlineEditor();
+    });
+
+    return () => window.cancelAnimationFrame(animationFrameId);
   }, [isEditingSelectedText, selectedTextLayer?.id]);
 
   let selectionToolbarStyle: CSSProperties | undefined;
@@ -275,8 +298,8 @@ export function EditorCanvas({
                         onTransform={(event) => onTransform(layer.id, event)}
                         onClick={() => onSelectLayer(layer.id)}
                         onTap={() => onSelectLayer(layer.id)}
-                        onDblClick={() => onStartEditingText(layer.id)}
-                        onDblTap={() => onStartEditingText(layer.id)}
+                        onDblClick={() => openInlineEditor(layer.id)}
+                        onDblTap={() => openInlineEditor(layer.id)}
                         onDragEnd={(event) => onDragEnd(layer.id, event)}
                         onTransformEnd={(event) => onTransform(layer.id, event)}
                         ref={(node) => {
@@ -371,7 +394,7 @@ export function EditorCanvas({
                   <button
                     type="button"
                     className="secondary text-selection-edit-button"
-                    onClick={() => onStartEditingText(selectedTextLayer.id)}
+                    onClick={() => openInlineEditor(selectedTextLayer.id)}
                   >
                     Изменить текст
                   </button>
@@ -529,45 +552,46 @@ export function EditorCanvas({
                 </div>
               ) : null}
 
-              {isEditingSelectedText && inlineEditorStyle ? (
-                <div className="text-inline-editor" style={inlineEditorStyle}>
-                  <textarea
-                    ref={textEditorRef}
-                    className="text-inline-editor-input"
-                    value={selectedTextLayer.text}
-                    style={{
-                      fontFamily: selectedTextLayer.fontFamily,
-                      fontSize: `${Math.max(selectedTextLayer.fontSize * scale, 14)}px`,
-                      lineHeight: String(selectedTextLayer.lineHeight),
-                      color: selectedTextLayer.color,
-                      textAlign: selectedTextLayer.align,
-                      letterSpacing: `${(selectedTextLayer.letterSpacing ?? 0) * scale}px`,
-                      fontStyle: selectedTextLayer.fontStyle?.includes('italic') ? 'italic' : 'normal',
-                      fontWeight: selectedTextLayer.fontStyle?.includes('bold') ? 700 : 500,
-                    }}
-                    onChange={(event) => onInlineTextChange(selectedTextLayer.id, event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Escape') {
-                        event.preventDefault();
-                        onStopEditingText();
-                      }
-
-                      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-                        event.preventDefault();
-                        onStopEditingText();
-                      }
-                    }}
-                  />
-                  <button
-                    type="button"
-                    className="text-inline-editor-done"
-                    onClick={onStopEditingText}
-                  >
-                    Готово
-                  </button>
-                </div>
-              ) : null}
             </>
+          ) : null}
+
+          {selectedTextLayer && isEditingSelectedText && inlineEditorStyle ? (
+            <div className="text-inline-editor" style={inlineEditorStyle}>
+              <textarea
+                ref={textEditorRef}
+                className="text-inline-editor-input"
+                value={selectedTextLayer.text}
+                style={{
+                  fontFamily: selectedTextLayer.fontFamily,
+                  fontSize: `${Math.max(selectedTextLayer.fontSize * scale, 14)}px`,
+                  lineHeight: String(selectedTextLayer.lineHeight),
+                  color: selectedTextLayer.color,
+                  textAlign: selectedTextLayer.align,
+                  letterSpacing: `${(selectedTextLayer.letterSpacing ?? 0) * scale}px`,
+                  fontStyle: selectedTextLayer.fontStyle?.includes('italic') ? 'italic' : 'normal',
+                  fontWeight: selectedTextLayer.fontStyle?.includes('bold') ? 700 : 500,
+                }}
+                onChange={(event) => onInlineTextChange(selectedTextLayer.id, event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    onStopEditingText();
+                  }
+
+                  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+                    event.preventDefault();
+                    onStopEditingText();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                className="text-inline-editor-done"
+                onClick={onStopEditingText}
+              >
+                Готово
+              </button>
+            </div>
           ) : null}
         </div>
 
