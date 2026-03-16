@@ -133,6 +133,32 @@ function App() {
     });
   };
 
+  const addImageFromBlob = async (blob: Blob) => {
+    const imageDataUrl = await readBlobAsDataUrl(blob);
+    await addImageLayerFromDataUrl(imageDataUrl);
+  };
+
+  const addImageFromText = async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+
+    if (trimmed.startsWith('data:image/')) {
+      await addImageLayerFromDataUrl(trimmed);
+      return true;
+    }
+
+    const looksLikeImageUrl =
+      /^(https?:\/\/\S+\.(?:png|jpe?g|webp|gif|avif|bmp|svg)(?:\?\S*)?)$/i.test(trimmed);
+    if (!looksLikeImageUrl) return false;
+
+    const response = await fetch(trimmed, { mode: 'cors' });
+    const blob = await response.blob();
+    if (!blob.type.startsWith('image/')) return false;
+
+    await addImageFromBlob(blob);
+    return true;
+  };
+
   const addImageLayerFromDataUrl = async (dataUrl: string) => {
     const image = await loadImage(dataUrl);
     const fitScale = Math.max(stageSize.width / image.width, stageSize.height / image.height);
@@ -302,35 +328,114 @@ function App() {
     addTextLayer(trimmed);
   };
 
+  const parseClipboardTextAsImage = async (text: string) => {
+    const insertedAsImage = await addImageFromText(text);
+    if (insertedAsImage) return;
+    await addTextToSelectionOrNewLayer(text);
+  };
+
+  const parseClipboardItemsForImage = async (items: ClipboardItem[]) => {
+    for (const item of items) {
+      const imageType = item.types.find((type) => type.startsWith('image/'));
+      if (imageType) {
+        const blob = await item.getType(imageType);
+        await addImageFromBlob(blob);
+        return true;
+      }
+
+      const htmlType = item.types.find((type) => type === 'text/html');
+      if (htmlType) {
+        const htmlBlob = await item.getType(htmlType);
+        const html = await htmlBlob.text();
+        const imageFromTag = /<img[^>]+src=["']([^"']+)["'][^>]*>/i.exec(html)?.[1];
+        if (imageFromTag && (await addImageFromText(imageFromTag))) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  };
+
   const handlePaste = async () => {
     try {
       if (!navigator.clipboard || !navigator.clipboard.read) {
         const plainText = await navigator.clipboard.readText();
         if (plainText) {
-          await addTextToSelectionOrNewLayer(plainText);
+          await parseClipboardTextAsImage(plainText);
         }
         return;
       }
 
       const clipboardItems = await navigator.clipboard.read();
-      for (const item of clipboardItems) {
-        const imageType = item.types.find((type) => type.startsWith('image/'));
-        if (imageType) {
-          const blob = await item.getType(imageType);
-          const imageDataUrl = await readBlobAsDataUrl(blob);
-          await addImageLayerFromDataUrl(imageDataUrl);
-          return;
-        }
-      }
+      const imageInserted = await parseClipboardItemsForImage(clipboardItems);
+      if (imageInserted) return;
 
       const itemText = await navigator.clipboard.readText();
       if (itemText) {
-        await addTextToSelectionOrNewLayer(itemText);
+        await parseClipboardTextAsImage(itemText);
+        return;
       }
+
+      alert('В буфере обмена нет данных для вставки.');
     } catch {
       alert('Не удалось прочитать буфер обмена. Проверьте разрешения и попробуйте снова.');
     }
   };
+
+  useEffect(() => {
+    const handleWindowPaste = async (event: ClipboardEvent) => {
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement
+      ) {
+        return;
+      }
+
+      const data = event.clipboardData;
+      if (!data) return;
+
+      const items = Array.from(data.items);
+      const imageItem = items.find(
+        (item) => item.kind === 'file' && typeof item.type === 'string' && item.type.startsWith('image/'),
+      );
+
+      if (imageItem) {
+        const file = imageItem.getAsFile();
+        if (file) {
+          event.preventDefault();
+          await addImageFromBlob(file);
+          return;
+        }
+      }
+
+      const html = data.getData('text/html');
+      if (html) {
+        const imageFromTag = /<img[^>]+src=["']([^"']+)["'][^>]*>/i.exec(html)?.[1];
+        if (imageFromTag) {
+          event.preventDefault();
+          if (await addImageFromText(imageFromTag)) {
+            return;
+          }
+        }
+      }
+
+      const text = data.getData('text/plain');
+      if (text && text.trim()) {
+        event.preventDefault();
+        await parseClipboardTextAsImage(text);
+      }
+    };
+
+    window.addEventListener('paste', handleWindowPaste);
+    return () => window.removeEventListener('paste', handleWindowPaste);
+  }, [
+    addImageFromBlob,
+    addImageFromText,
+    parseClipboardTextAsImage,
+  ]);
 
   const handleUploadImage = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
