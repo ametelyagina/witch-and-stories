@@ -17,9 +17,9 @@ import {
 } from './editor/types';
 import { DEFAULT_TEXT_BACKGROUND_COLOR } from './editor/textHighlight';
 import { DEFAULT_TEXT_STYLE_PRESET_ID, getFontOptions, getTextStylePresetById } from './editor/textPresets';
-import { readFileAsDataUrl, loadImage } from './utils/media';
+import { rasterizeBackgroundImage, readFileAsDataUrl, loadImage } from './utils/media';
 import { clamp } from './utils/math';
-import { readState, saveState } from './utils/storage';
+import { readState, saveState, type EditorPersistedState } from './utils/storage';
 
 function getPresetByKey(preset: Preset) {
   return PRESETS.find((item) => item.key === preset)!;
@@ -53,6 +53,7 @@ function App() {
   const nodeRefs = useRef<Record<string, Konva.Node>>({});
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const fontInputRef = useRef<HTMLInputElement | null>(null);
+  const persistedStateRef = useRef<EditorPersistedState | null>(null);
   const defaultTextPreset = getTextStylePresetById(DEFAULT_TEXT_STYLE_PRESET_ID);
 
   const stageSize = useMemo(() => getPresetByKey(preset), [preset]);
@@ -161,13 +162,39 @@ function App() {
 
   useEffect(() => {
     if (!isHydrated) return;
-    void saveState({
+    const snapshot: EditorPersistedState = {
       preset,
       selectedLayerId,
       layers,
       fonts,
-    });
+    };
+    persistedStateRef.current = snapshot;
+    void saveState(snapshot);
   }, [fonts, isHydrated, layers, preset, selectedLayerId]);
+
+  useEffect(() => {
+    const flushPersistedState = () => {
+      const snapshot = persistedStateRef.current;
+      if (!snapshot) {
+        return;
+      }
+
+      void saveState(snapshot);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        flushPersistedState();
+      }
+    };
+
+    window.addEventListener('pagehide', flushPersistedState);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', flushPersistedState);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   useEffect(() => {
     const transformer = transformerRef.current;
@@ -302,8 +329,8 @@ function App() {
       kind: placement.kind,
       src: dataUrl,
       image,
-      naturalWidth: image.width,
-      naturalHeight: image.height,
+      naturalWidth: image.naturalWidth || image.width,
+      naturalHeight: image.naturalHeight || image.height,
       x: placement.x,
       y: placement.y,
       width: placement.width,
@@ -368,9 +395,8 @@ function App() {
     return true;
   };
 
-  const finalizeMainPhotoLayer = (
+  const finalizeMainPhotoLayer = async (
     image: HTMLImageElement,
-    dataUrl: string,
     options: {
       presetKey: Preset;
       mode: 'fit' | 'cover';
@@ -383,6 +409,8 @@ function App() {
     let height = target.height;
     let x = 0;
     let y = 0;
+    const sourceWidth = image.naturalWidth || image.width;
+    const sourceHeight = image.naturalHeight || image.height;
     const crop = options.crop || {
       x: 0,
       y: 0,
@@ -391,19 +419,25 @@ function App() {
     };
 
     if (options.mode === 'fit') {
-      const fitScale = Math.min(target.width / image.width, target.height / image.height);
-      width = image.width * fitScale;
-      height = image.height * fitScale;
+      const fitScale = Math.min(target.width / sourceWidth, target.height / sourceHeight);
+      width = sourceWidth * fitScale;
+      height = sourceHeight * fitScale;
       x = (target.width - width) / 2;
       y = (target.height - height) / 2;
     }
-    const layer = createImageLayer(image, dataUrl, {
+    const persistedBackground = await rasterizeBackgroundImage({
+      image,
+      crop,
+      width,
+      height,
+    });
+    const layer = createImageLayer(persistedBackground.image, persistedBackground.dataUrl, {
       kind: 'background',
       x,
       y,
       width,
       height,
-      crop,
+      crop: persistedBackground.crop,
     });
 
     setLayers((prev) => [...prev, layer]);
@@ -432,7 +466,7 @@ function App() {
     await addImageLayerFromDataUrl(dataUrl);
   };
 
-  const applyPendingImage = ({
+  const applyPendingImage = async ({
     preset: pickedPreset,
     mode,
     crop,
@@ -447,7 +481,7 @@ function App() {
       setPreset(pickedPreset);
     }
 
-    finalizeMainPhotoLayer(pendingImage.image, pendingImage.dataUrl, {
+    await finalizeMainPhotoLayer(pendingImage.image, {
       presetKey: pickedPreset,
       mode,
       crop,

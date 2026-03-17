@@ -271,87 +271,6 @@ async function waitForSavedLayerCount(page, expectedCount) {
   );
 }
 
-async function writeSavedEnvelopes(page, { localEnvelope = null, indexedDbEnvelope = null } = {}) {
-  await page.evaluate(
-    async ({ storageKey, storageDbName, storageObjectStore, nextLocalEnvelope, nextIndexedDbEnvelope }) => {
-      localStorage.clear();
-      if (nextLocalEnvelope) {
-        localStorage.setItem(storageKey, JSON.stringify(nextLocalEnvelope));
-      }
-
-      if (typeof indexedDB === 'undefined') {
-        return;
-      }
-
-      await new Promise((resolve) => {
-        try {
-          const deleteRequest = indexedDB.deleteDatabase(storageDbName);
-          deleteRequest.onsuccess = () => resolve(null);
-          deleteRequest.onerror = () => resolve(null);
-          deleteRequest.onblocked = () => resolve(null);
-        } catch {
-          resolve(null);
-        }
-      });
-
-      if (!nextIndexedDbEnvelope) {
-        return;
-      }
-
-      await new Promise((resolve) => {
-        try {
-          const openRequest = indexedDB.open(storageDbName, 1);
-
-          openRequest.onupgradeneeded = () => {
-            const database = openRequest.result;
-            if (!database.objectStoreNames.contains(storageObjectStore)) {
-              database.createObjectStore(storageObjectStore);
-            }
-          };
-
-          openRequest.onsuccess = () => {
-            const database = openRequest.result;
-
-            try {
-              const transaction = database.transaction(storageObjectStore, 'readwrite');
-              const store = transaction.objectStore(storageObjectStore);
-              store.put(nextIndexedDbEnvelope, storageKey);
-
-              transaction.oncomplete = () => {
-                database.close();
-                resolve(null);
-              };
-              transaction.onerror = () => {
-                database.close();
-                resolve(null);
-              };
-              transaction.onabort = () => {
-                database.close();
-                resolve(null);
-              };
-            } catch {
-              database.close();
-              resolve(null);
-            }
-          };
-
-          openRequest.onerror = () => resolve(null);
-          openRequest.onblocked = () => resolve(null);
-        } catch {
-          resolve(null);
-        }
-      });
-    },
-    {
-      storageKey: STORAGE_KEY,
-      storageDbName: STORAGE_DB_NAME,
-      storageObjectStore: STORAGE_OBJECT_STORE,
-      nextLocalEnvelope: localEnvelope,
-      nextIndexedDbEnvelope: indexedDbEnvelope,
-    },
-  );
-}
-
 async function sampleCanvasPixel(page, sample) {
   return page.evaluate(({ lineText, pointX, pointY }) => {
     const canvas = document.querySelector('.konvajs-content canvas');
@@ -467,6 +386,16 @@ test('text highlight toggle persists and paints canvas', async (t) => {
 
   await page.getByRole('button', { name: /быстрые настройки текста/i }).click();
   await page.locator('.text-selection-highlight-button').click();
+  await page.waitForFunction((storageKey) => {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) {
+      return false;
+    }
+
+    const state = JSON.parse(raw);
+    return state.layers?.[0]?.backgroundEnabled === true;
+  }, STORAGE_KEY);
+  await page.waitForTimeout(50);
 
   const sampleAfter = await sampleCanvasPixel(page, {
     lineText: 'HELLO',
@@ -574,34 +503,55 @@ test('paste button inserts clipboard image as overlay instead of opening backgro
   assert.equal(hasModal, 0);
 });
 
-test('fresh background survives app return and clipboard sticker paste', async (t) => {
-  const freshSavedAt = Date.now() + 60_000;
-  const backgroundLayer = buildImageLayer({
-    id: 'background-1',
-    kind: 'background',
-    width: 1080,
-    height: 1920,
-    x: 0,
-    y: 0,
+test('uploaded background is persisted as stage-sized asset and survives reload', async (t) => {
+  const hugeSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="6000" height="9000" viewBox="0 0 6000 9000">' +
+    '<rect width="6000" height="9000" fill="#d6a27d"/>' +
+    '<circle cx="3000" cy="3200" r="1600" fill="#f8efe4"/>' +
+    '<rect x="1200" y="5200" width="3600" height="1800" rx="320" fill="#8f4c2a"/>' +
+    '</svg>';
+
+  const { context, page } = await openMobilePage();
+  t.after(async () => context.close());
+
+  await page.locator('input[type="file"][accept="image/*"]').setInputFiles({
+    name: 'huge-background.svg',
+    mimeType: 'image/svg+xml',
+    buffer: Buffer.from(hugeSvg),
   });
-  const freshState = {
-    ...buildState({
-      selectedLayerId: backgroundLayer.id,
-      layers: [backgroundLayer],
-    }),
-    savedAt: freshSavedAt,
-  };
-  const staleState = {
-    ...buildState(),
-    savedAt: freshSavedAt - 1,
-  };
+
+  await page.locator('.image-picker').waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: /использовать фото/i }).click();
+  await waitForSavedLayerCount(page, 1);
+
+  let savedState = await readSavedState(page);
+  assert.equal(savedState.layers.length, 1);
+  assert.equal(savedState.layers[0].kind, 'background');
+  assert.equal(savedState.layers[0].naturalWidth, 1080);
+  assert.equal(savedState.layers[0].naturalHeight, 1920);
+
+  await page.reload({ waitUntil: 'networkidle' });
+
+  savedState = await readSavedState(page);
+  assert.equal(savedState.layers.length, 1);
+  assert.equal(savedState.layers[0].kind, 'background');
+  assert.equal(savedState.layers[0].naturalWidth, 1080);
+  assert.equal(savedState.layers[0].naturalHeight, 1920);
+});
+
+test('background survives reload and clipboard sticker paste', async (t) => {
+  const hugeSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="6000" height="9000" viewBox="0 0 6000 9000">' +
+    '<rect width="6000" height="9000" fill="#d6a27d"/>' +
+    '<circle cx="3000" cy="3200" r="1600" fill="#f8efe4"/>' +
+    '<rect x="1200" y="5200" width="3600" height="1800" rx="320" fill="#8f4c2a"/>' +
+    '</svg>';
   const sampleSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="480" height="480" viewBox="0 0 480 480">' +
     '<rect width="480" height="480" rx="180" fill="#f97316"/>' +
     '</svg>';
 
   const { context, page } = await openMobilePage({
-    seedStorage: false,
     extraInitScripts: [
       {
         fn: (svg) => {
@@ -624,10 +574,15 @@ test('fresh background survives app return and clipboard sticker paste', async (
   });
   t.after(async () => context.close());
 
-  await writeSavedEnvelopes(page, {
-    localEnvelope: freshState,
-    indexedDbEnvelope: staleState,
+  await page.locator('input[type="file"][accept="image/*"]').setInputFiles({
+    name: 'return-background.svg',
+    mimeType: 'image/svg+xml',
+    buffer: Buffer.from(hugeSvg),
   });
+  await page.locator('.image-picker').waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: /использовать фото/i }).click();
+  await waitForSavedLayerCount(page, 1);
+
   await page.reload({ waitUntil: 'networkidle' });
 
   const restoredState = await readSavedState(page);
