@@ -1,4 +1,4 @@
-import { CSSProperties, useEffect, useRef } from 'react';
+import { CSSProperties, PointerEvent as ReactPointerEvent, useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 
 import { FontPicker } from './FontPicker';
@@ -48,6 +48,9 @@ type EditorCanvasProps = {
   }) => void;
   onDeleteUploadedFont: (fontId: string) => void;
   onDeleteSelected: () => void;
+  onRequestSavePreview: () => void;
+  isPreparingSavePreview: boolean;
+  isSavePreviewOpen: boolean;
   onStartEditingText: (id: string) => void;
   onStopEditingText: () => void;
   onInlineTextChange: (id: string, value: string) => void;
@@ -79,6 +82,9 @@ export function EditorCanvas({
   onQuickTextStyleChange,
   onDeleteUploadedFont,
   onDeleteSelected,
+  onRequestSavePreview,
+  isPreparingSavePreview,
+  isSavePreviewOpen,
   onStartEditingText,
   onStopEditingText,
   onInlineTextChange,
@@ -91,6 +97,9 @@ export function EditorCanvas({
   onDropFiles,
 }: EditorCanvasProps) {
   const textEditorRef = useRef<HTMLTextAreaElement | null>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressTriggeredRef = useRef(false);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const focusInlineEditor = () => {
     const textarea = textEditorRef.current;
@@ -119,6 +128,64 @@ export function EditorCanvas({
     if (files.length > 0) {
       onDropFiles(files);
     }
+  };
+
+  const clearLongPressTimer = () => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const cancelLongPress = () => {
+    clearLongPressTimer();
+    longPressStartRef.current = null;
+  };
+
+  useEffect(() => {
+    return () => {
+      clearLongPressTimer();
+    };
+  }, []);
+
+  const handleStagePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (
+      event.pointerType !== 'touch' ||
+      isPreparingSavePreview ||
+      isSavePreviewOpen ||
+      layers.length === 0
+    ) {
+      return;
+    }
+
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || !target.closest('.konvajs-content')) {
+      return;
+    }
+
+    longPressTriggeredRef.current = false;
+    longPressStartRef.current = { x: event.clientX, y: event.clientY };
+    clearLongPressTimer();
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTriggeredRef.current = true;
+      onRequestSavePreview();
+    }, 320);
+  };
+
+  const handleStagePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!longPressStartRef.current || longPressTriggeredRef.current) {
+      return;
+    }
+
+    const deltaX = event.clientX - longPressStartRef.current.x;
+    const deltaY = event.clientY - longPressStartRef.current.y;
+    if (Math.hypot(deltaX, deltaY) > 10) {
+      cancelLongPress();
+    }
+  };
+
+  const handleStagePointerUp = () => {
+    cancelLongPress();
   };
   const selectedTextLayer = isTextLayer(selectedLayer) ? selectedLayer : null;
   const isEditingSelectedText = Boolean(
@@ -224,6 +291,11 @@ export function EditorCanvas({
               width: `${Math.round(width * scale)}px`,
               height: `${Math.round(height * scale)}px`,
             }}
+            onPointerDown={handleStagePointerDown}
+            onPointerMove={handleStagePointerMove}
+            onPointerUp={handleStagePointerUp}
+            onPointerCancel={handleStagePointerUp}
+            onPointerLeave={handleStagePointerUp}
           >
             <div
               className="canvas-stage-inner"
@@ -621,12 +693,12 @@ export function EditorCanvas({
             {layers.length === 0
               ? `Пустая канва ${width} x ${height}. Перетащите фото сюда, вставьте из буфера или нажмите “Загрузить фото”.`
               : selectedLayer?.type === 'image' && selectedLayer.kind === 'overlay'
-                ? `${width} x ${height} · ${Math.round(scale * 100)}% · стикер можно сразу тянуть за любое место, рамка и точки увеличены для пальца.`
+                ? `${width} x ${height} · ${Math.round(scale * 100)}% · стикер можно сразу тянуть за любое место, рамка и точки увеличены для пальца. Долгое удержание по канве откроет сохранение изображения.`
               : selectedLayer?.type === 'image' && dragArmedImageId === selectedLayer.id
-                ? `${width} x ${height} · ${Math.round(scale * 100)}% · фото разблокировано для перемещения, после drag блокировка вернётся.`
+                ? `${width} x ${height} · ${Math.round(scale * 100)}% · фото разблокировано для перемещения, после drag блокировка вернётся. Долгое удержание по канве откроет сохранение изображения.`
                 : selectedLayer?.type === 'image'
-                  ? `${width} x ${height} · ${Math.round(scale * 100)}% · первый тап выделяет фото, второй тап или double tap включает перемещение.`
-                  : `${width} x ${height} · ${Math.round(scale * 100)}% · кликните по пустой области, чтобы снять выделение.`}
+                  ? `${width} x ${height} · ${Math.round(scale * 100)}% · первый тап выделяет фото, второй тап или double tap включает перемещение. Долгое удержание по канве откроет сохранение изображения.`
+                  : `${width} x ${height} · ${Math.round(scale * 100)}% · кликните по пустой области, чтобы снять выделение. Долгое удержание по канве откроет сохранение изображения.`}
           </p>
         ) : null}
       </div>

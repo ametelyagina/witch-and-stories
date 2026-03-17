@@ -46,6 +46,8 @@ function App() {
     dataUrl: string;
     image: HTMLImageElement;
   } | null>(null);
+  const [savePreviewUrl, setSavePreviewUrl] = useState<string | null>(null);
+  const [isPreparingSavePreview, setIsPreparingSavePreview] = useState(false);
 
   const stageRef = useRef<Konva.Stage | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -639,6 +641,40 @@ function App() {
     window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
   };
 
+  const closeSavePreview = () => {
+    setSavePreviewUrl((current) => {
+      if (current) {
+        URL.revokeObjectURL(current);
+      }
+      return null;
+    });
+  };
+
+  const handleRequestSavePreview = async () => {
+    const stage = stageRef.current;
+    if (!stage || isPreparingSavePreview || layers.length === 0) {
+      return;
+    }
+
+    setIsPreparingSavePreview(true);
+    try {
+      const dataUrl = stage.toDataURL({
+        pixelRatio: 3,
+        mimeType: 'image/png',
+      });
+      const blob = await dataUrlToBlob(dataUrl);
+      const previewUrl = URL.createObjectURL(blob);
+      setSavePreviewUrl((current) => {
+        if (current) {
+          URL.revokeObjectURL(current);
+        }
+        return previewUrl;
+      });
+    } finally {
+      setIsPreparingSavePreview(false);
+    }
+  };
+
   const handlePresetChange = (nextPreset: Preset) => {
     setPreset(nextPreset);
   };
@@ -1029,6 +1065,9 @@ function App() {
             onQuickTextStyleChange={handleQuickTextStyleChange}
             onDeleteUploadedFont={handleDeleteUploadedFont}
             onDeleteSelected={removeSelectedLayer}
+            onRequestSavePreview={handleRequestSavePreview}
+            isPreparingSavePreview={isPreparingSavePreview}
+            isSavePreviewOpen={Boolean(savePreviewUrl)}
             onStartEditingText={handleStartEditingText}
             onStopEditingText={handleStopEditingText}
             onInlineTextChange={updateTextField}
@@ -1052,6 +1091,24 @@ function App() {
           onDeleteUploadedFont={handleDeleteUploadedFont}
         />
       </main>
+
+      {savePreviewUrl ? (
+        <div className="save-preview" role="dialog" aria-modal="true" aria-label="Сохранение изображения">
+          <button type="button" className="secondary save-preview-close" onClick={closeSavePreview}>
+            Закрыть
+          </button>
+          <div className="save-preview-card">
+            <p className="save-preview-copy">
+              Удерживай изображение и выбирай “Сохранить изображение” в меню iPhone.
+            </p>
+            <img
+              src={savePreviewUrl}
+              alt="Готовое изображение для сохранения"
+              className="save-preview-image"
+            />
+          </div>
+        </div>
+      ) : null}
 
       <input
         ref={imageInputRef}

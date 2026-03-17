@@ -90,6 +90,11 @@ export const readFileAsDataUrl = (file: File) => {
   });
 };
 
+export const dataUrlToBlob = async (dataUrl: string) => {
+  const response = await fetch(dataUrl);
+  return response.blob();
+};
+
 export const preloadImageLayer = async (layer: Omit<ImageLayer, 'image'>) => {
   const image = await loadImage(layer.src);
   return {

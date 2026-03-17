@@ -767,6 +767,59 @@ test('export uses native share sheet with png file on mobile when supported', as
   assert(shareCall.files[0].size > 0);
 });
 
+test('long press on canvas opens save preview image on mobile', async (t) => {
+  const textLayer = buildTextLayer({
+    text: 'Save me',
+  });
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      selectedLayerId: textLayer.id,
+      layers: [textLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  await page
+    .locator('.konvajs-content canvas')
+    .dispatchEvent('pointerdown', {
+      bubbles: true,
+      pointerType: 'touch',
+      clientX: 80,
+      clientY: 120,
+      isPrimary: true,
+    });
+  await page.waitForTimeout(380);
+  await page
+    .locator('.konvajs-content canvas')
+    .dispatchEvent('pointerup', {
+      bubbles: true,
+      pointerType: 'touch',
+      clientX: 80,
+      clientY: 120,
+      isPrimary: true,
+    });
+
+  await page.locator('.save-preview-image').waitFor({ state: 'visible' });
+
+  const previewInfo = await page.evaluate(() => {
+    const image = document.querySelector('.save-preview-image');
+    if (!(image instanceof HTMLImageElement)) {
+      return null;
+    }
+
+    return {
+      src: image.currentSrc || image.src,
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+    };
+  });
+
+  assert(previewInfo);
+  assert.match(previewInfo.src, /^(blob:|data:image\/png)/);
+  assert(previewInfo.width > 0);
+  assert(previewInfo.height > 0);
+});
+
 test('uploaded background is persisted as stage-sized asset and survives reload', async (t) => {
   const hugeSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="6000" height="9000" viewBox="0 0 6000 9000">' +
