@@ -116,20 +116,31 @@ async function openMobilePage({
     deviceScaleFactor: 3,
   });
 
-  if (seedStorage) {
-    await context.addInitScript(
-      ({ storageKey, nextState }) => {
-        localStorage.clear();
-        if (nextState) {
-          localStorage.setItem(storageKey, JSON.stringify(nextState));
-        }
-      },
-      {
-        storageKey: STORAGE_KEY,
-        nextState: state,
-      },
-    );
-  }
+  await context.addInitScript(
+    ({ storageKey, storageDbName, nextState }) => {
+      const seededMarker = '__codexTestStorageSeeded';
+      if (sessionStorage.getItem(seededMarker) === 'true') {
+        return;
+      }
+
+      sessionStorage.setItem(seededMarker, 'true');
+      localStorage.clear();
+      try {
+        indexedDB.deleteDatabase(storageDbName);
+      } catch {
+        // Ignore environments without IndexedDB teardown support in init script.
+      }
+
+      if (nextState) {
+        localStorage.setItem(storageKey, JSON.stringify(nextState));
+      }
+    },
+    {
+      storageKey: STORAGE_KEY,
+      storageDbName: STORAGE_DB_NAME,
+      nextState: seedStorage ? state : null,
+    },
+  );
 
   for (const script of extraInitScripts) {
     await context.addInitScript(script.fn, script.arg);

@@ -1,10 +1,18 @@
-import { ChangeEvent, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ChangeEvent,
+  PointerEvent as ReactPointerEvent,
+  Suspense,
+  lazy,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import Konva from 'konva';
 import { nanoid } from 'nanoid';
 
 import { TopBar } from './components/TopBar';
 import { ActionRail } from './components/ActionRail';
-import { ImagePicker } from './components/ImagePicker';
 import { EditorCanvas } from './components/EditorCanvas';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import {
@@ -31,6 +39,13 @@ import {
 import { dataUrlToBlob, rasterizeBackgroundImage, readFileAsDataUrl, loadImage } from './utils/media';
 import { clamp } from './utils/math';
 import { readState, saveState, type EditorPersistedState } from './utils/storage';
+
+const LazyImagePicker = lazy(async () => {
+  const module = await import('./components/ImagePicker');
+  return {
+    default: module.ImagePicker,
+  };
+});
 
 function getPresetByKey(preset: Preset) {
   return PRESETS.find((item) => item.key === preset)!;
@@ -1283,18 +1298,40 @@ function App() {
       />
 
       <main className="workbench" onPointerDown={handleWorkbenchPointerDown}>
-        <ImagePicker
-          open={Boolean(pendingImage)}
-          image={
-            pendingImage
-              ? { src: pendingImage.dataUrl, width: pendingImage.image.width, height: pendingImage.image.height }
-              : { src: '', width: 1, height: 1 }
+        <Suspense
+          fallback={
+            pendingImage ? (
+              <div className="modal-backdrop" role="presentation">
+                <section
+                  aria-label="Image picker"
+                  aria-modal="true"
+                  className="image-picker image-picker--loading"
+                  role="dialog"
+                >
+                  <div className="image-picker-head">
+                    <div>
+                      <h2>Подгонка фото</h2>
+                      <p>Готовим инструмент загрузки и кадрирования...</p>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            ) : null
           }
-          presets={PRESETS}
-          initialPreset={preset}
-          onApply={applyPendingImage}
-          onCancel={() => setPendingImage(null)}
-        />
+        >
+          <LazyImagePicker
+            open={Boolean(pendingImage)}
+            image={
+              pendingImage
+                ? { src: pendingImage.dataUrl, width: pendingImage.image.width, height: pendingImage.image.height }
+                : { src: '', width: 1, height: 1 }
+            }
+            presets={PRESETS}
+            initialPreset={preset}
+            onApply={applyPendingImage}
+            onCancel={() => setPendingImage(null)}
+          />
+        </Suspense>
 
         <ActionRail
           onUploadImage={() => imageInputRef.current?.click()}

@@ -1060,6 +1060,11 @@ canvas {
   box-shadow: 0 24px 60px rgb(16 12 9 / 36%);
 }
 
+.image-picker--loading {
+  min-height: 220px;
+  align-content: start;
+}
+
 .image-picker-head {
   display: flex;
   align-items: flex-start;
