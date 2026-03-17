@@ -271,6 +271,74 @@ async function waitForSavedLayerCount(page, expectedCount) {
   );
 }
 
+async function waitForSavedFontCount(page, expectedCount) {
+  await page.waitForFunction(
+    async ({ storageKey, storageDbName, storageObjectStore, nextCount }) => {
+      const readLocalEnvelope = () => {
+        const raw = localStorage.getItem(storageKey);
+        return raw ? JSON.parse(raw) : null;
+      };
+
+      const readIndexedDbEnvelope = async () => {
+        if (typeof indexedDB === 'undefined') {
+          return null;
+        }
+
+        return new Promise((resolve) => {
+          try {
+            const request = indexedDB.open(storageDbName);
+
+            request.onsuccess = () => {
+              const database = request.result;
+              if (!database.objectStoreNames.contains(storageObjectStore)) {
+                database.close();
+                resolve(null);
+                return;
+              }
+
+              try {
+                const transaction = database.transaction(storageObjectStore, 'readonly');
+                const store = transaction.objectStore(storageObjectStore);
+                const getRequest = store.get(storageKey);
+
+                getRequest.onsuccess = () => resolve(getRequest.result ?? null);
+                getRequest.onerror = () => resolve(null);
+                transaction.oncomplete = () => database.close();
+                transaction.onerror = () => database.close();
+                transaction.onabort = () => database.close();
+              } catch {
+                database.close();
+                resolve(null);
+              }
+            };
+
+            request.onerror = () => resolve(null);
+            request.onblocked = () => resolve(null);
+          } catch {
+            resolve(null);
+          }
+        });
+      };
+
+      const localEnvelope = readLocalEnvelope();
+      const indexedDbEnvelope = await readIndexedDbEnvelope();
+      const localSavedAt = typeof localEnvelope?.savedAt === 'number' ? localEnvelope.savedAt : 0;
+      const indexedDbSavedAt =
+        typeof indexedDbEnvelope?.savedAt === 'number' ? indexedDbEnvelope.savedAt : 0;
+      const latestEnvelope =
+        localSavedAt >= indexedDbSavedAt ? localEnvelope : indexedDbEnvelope;
+
+      return latestEnvelope?.fonts?.length === nextCount;
+    },
+    {
+      storageKey: STORAGE_KEY,
+      storageDbName: STORAGE_DB_NAME,
+      storageObjectStore: STORAGE_OBJECT_STORE,
+      nextCount: expectedCount,
+    },
+  );
+}
+
 async function sampleCanvasPixel(page, sample) {
   return page.evaluate(({ lineText, pointX, pointY }) => {
     const canvas = document.querySelector('.konvajs-content canvas');
@@ -501,6 +569,202 @@ test('paste button inserts clipboard image as overlay instead of opening backgro
   assert(savedState.layers[0].width > 70);
   assert(savedState.layers[0].height > 70);
   assert.equal(hasModal, 0);
+});
+
+test('uploaded font survives reload and can be deleted with confirmation', async (t) => {
+  const textLayer = buildTextLayer();
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      selectedLayerId: textLayer.id,
+      layers: [textLayer],
+    }),
+    extraInitScripts: [
+      {
+        fn: () => {
+          const FakeFontFace = class {
+            constructor(family, source) {
+              this.family = family;
+              this.source = source;
+            }
+
+            async load() {
+              return this;
+            }
+          };
+
+          Object.defineProperty(window, 'FontFace', {
+            configurable: true,
+            value: FakeFontFace,
+          });
+          Object.defineProperty(document, 'fonts', {
+            configurable: true,
+            value: {
+              add() {},
+              delete() {},
+            },
+          });
+
+          window.__confirmCalls = [];
+          Object.defineProperty(window, 'confirm', {
+            configurable: true,
+            value: (message) => {
+              window.__confirmCalls.push(message);
+              return true;
+            },
+          });
+        },
+      },
+    ],
+  });
+  t.after(async () => context.close());
+
+  await page.locator('input[type="file"][accept=".ttf"]').setInputFiles({
+    name: 'UploadedFont.ttf',
+    mimeType: 'font/ttf',
+    buffer: Buffer.from('fake-font-binary'),
+  });
+  await waitForSavedFontCount(page, 2);
+
+  let savedState = await readSavedState(page);
+  assert.equal(savedState.fonts.length, 2);
+  const uploadedFont = savedState.fonts.find((font) => font.id !== 'default');
+  assert(uploadedFont);
+
+  await page.reload({ waitUntil: 'networkidle' });
+
+  savedState = await readSavedState(page);
+  assert.equal(savedState.fonts.length, 2);
+  assert(savedState.fonts.some((font) => font.id === uploadedFont.id));
+
+  await page.getByRole('button', { name: /открыть меню шрифтов в панели/i }).click();
+  await page
+    .locator('.font-picker-menu .font-picker-option-button')
+    .filter({ hasText: uploadedFont.name })
+    .click();
+
+  await page.waitForFunction(
+    async ({ storageKey, storageDbName, storageObjectStore, nextFamily }) => {
+      const readLocalEnvelope = () => {
+        const raw = localStorage.getItem(storageKey);
+        return raw ? JSON.parse(raw) : null;
+      };
+
+      const readIndexedDbEnvelope = async () => {
+        if (typeof indexedDB === 'undefined') {
+          return null;
+        }
+
+        return new Promise((resolve) => {
+          try {
+            const request = indexedDB.open(storageDbName);
+            request.onsuccess = () => {
+              const database = request.result;
+              if (!database.objectStoreNames.contains(storageObjectStore)) {
+                database.close();
+                resolve(null);
+                return;
+              }
+
+              try {
+                const transaction = database.transaction(storageObjectStore, 'readonly');
+                const store = transaction.objectStore(storageObjectStore);
+                const getRequest = store.get(storageKey);
+                getRequest.onsuccess = () => resolve(getRequest.result ?? null);
+                getRequest.onerror = () => resolve(null);
+                transaction.oncomplete = () => database.close();
+                transaction.onerror = () => database.close();
+                transaction.onabort = () => database.close();
+              } catch {
+                database.close();
+                resolve(null);
+              }
+            };
+            request.onerror = () => resolve(null);
+            request.onblocked = () => resolve(null);
+          } catch {
+            resolve(null);
+          }
+        });
+      };
+
+      const localEnvelope = readLocalEnvelope();
+      const indexedDbEnvelope = await readIndexedDbEnvelope();
+      const localSavedAt = typeof localEnvelope?.savedAt === 'number' ? localEnvelope.savedAt : 0;
+      const indexedDbSavedAt =
+        typeof indexedDbEnvelope?.savedAt === 'number' ? indexedDbEnvelope.savedAt : 0;
+      const latestEnvelope =
+        localSavedAt >= indexedDbSavedAt ? localEnvelope : indexedDbEnvelope;
+
+      return latestEnvelope?.layers?.[0]?.fontFamily === nextFamily;
+    },
+    {
+      storageKey: STORAGE_KEY,
+      storageDbName: STORAGE_DB_NAME,
+      storageObjectStore: STORAGE_OBJECT_STORE,
+      nextFamily: uploadedFont.family,
+    },
+  );
+
+  await page.getByRole('button', { name: /открыть меню шрифтов в панели/i }).click();
+  await page.getByRole('button', { name: new RegExp(`Удалить шрифт ${uploadedFont.name}`, 'i') }).click();
+  await waitForSavedFontCount(page, 1);
+
+  savedState = await readSavedState(page);
+  assert.equal(savedState.fonts.length, 1);
+  assert.equal(savedState.layers[0].fontFamily, 'Arial');
+
+  const confirmCalls = await page.evaluate(() => window.__confirmCalls);
+  assert.equal(confirmCalls.length, 1);
+  assert.match(confirmCalls[0], /Удалить шрифт/i);
+});
+
+test('export uses native share sheet with png file on mobile when supported', async (t) => {
+  const textLayer = buildTextLayer({
+    text: 'Export me',
+  });
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      selectedLayerId: textLayer.id,
+      layers: [textLayer],
+    }),
+    extraInitScripts: [
+      {
+        fn: () => {
+          window.__shareCalls = [];
+
+          Object.defineProperty(navigator, 'canShare', {
+            configurable: true,
+            value: (payload) => Boolean(payload?.files?.length),
+          });
+
+          Object.defineProperty(navigator, 'share', {
+            configurable: true,
+            value: async (payload) => {
+              window.__shareCalls.push({
+                title: payload?.title ?? null,
+                files:
+                  payload?.files?.map((file) => ({
+                    name: file.name,
+                    type: file.type,
+                    size: file.size,
+                  })) ?? [],
+              });
+            },
+          });
+        },
+      },
+    ],
+  });
+  t.after(async () => context.close());
+
+  await page.getByRole('button', { name: /экспорт png/i }).click();
+  await page.waitForFunction(() => window.__shareCalls?.length === 1);
+
+  const shareCall = await page.evaluate(() => window.__shareCalls[0]);
+  assert.equal(shareCall.files.length, 1);
+  assert.match(shareCall.files[0].name, /^story-\d+\.png$/);
+  assert.equal(shareCall.files[0].type, 'image/png');
+  assert(shareCall.files[0].size > 0);
 });
 
 test('uploaded background is persisted as stage-sized asset and survives reload', async (t) => {

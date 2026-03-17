@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import { FontPicker } from './FontPicker';
 import { ImageCrop, Layer, TextLayer, UploadedFont } from '../editor/types';
 import { DEFAULT_TEXT_BACKGROUND_COLOR } from '../editor/textHighlight';
 import { getFontOptions, getTextStylePresetById, TEXT_STYLE_PRESETS } from '../editor/textPresets';
@@ -17,6 +18,7 @@ type PropertiesPanelProps = {
   onTextChange: (id: string, value: string) => void;
   onCropChange: (id: string, axis: keyof ImageCrop, value: number) => void;
   fonts: UploadedFont[];
+  onDeleteUploadedFont: (fontId: string) => void;
 };
 
 type PanelSectionId = 'transform' | 'preset' | 'typography' | 'crop';
@@ -30,6 +32,7 @@ export function PropertiesPanel({
   onTextChange,
   onCropChange,
   fonts,
+  onDeleteUploadedFont,
 }: PropertiesPanelProps) {
   const [viewportWidth, setViewportWidth] = useState(() =>
     typeof window === 'undefined' ? 1280 : window.innerWidth,
@@ -59,6 +62,7 @@ export function PropertiesPanel({
         ? 'Текст'
         : null;
   const fontOptions = getFontOptions(fonts);
+  const uploadedFontCount = Math.max(0, fonts.filter((font) => font.id !== 'default').length);
   const isCompactLayout = viewportWidth <= 720;
   const sectionTabs = useMemo(() => {
     if (!selectedLayer) {
@@ -256,20 +260,23 @@ export function PropertiesPanel({
                       <label>Шрифт</label>
                       <span>{fontOptions.length} доступно</span>
                     </div>
-                    <select
+                    <FontPicker
                       value={selectedLayer.fontFamily}
-                      onChange={(event) =>
+                      fontOptions={fontOptions}
+                      uploadedFonts={fonts}
+                      ariaLabel="Открыть меню шрифтов в панели"
+                      onSelectFont={(family) =>
                         applyTextChanges(selectedLayer, {
-                          fontFamily: event.target.value,
+                          fontFamily: family,
                         })
                       }
-                    >
-                      {fontOptions.map((font) => (
-                        <option key={font.id} value={font.family}>
-                          {font.name}
-                        </option>
-                      ))}
-                    </select>
+                      onDeleteUploadedFont={onDeleteUploadedFont}
+                    />
+                    <p className="font-picker-hint">
+                      {uploadedFontCount > 0
+                        ? 'Загруженные шрифты сохраняются на этом устройстве, пока вы их не удалите.'
+                        : 'Импортированные шрифты будут храниться на этом устройстве и появляться здесь.'}
+                    </p>
                   </div>
 
                   <div className="field">

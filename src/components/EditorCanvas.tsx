@@ -1,7 +1,8 @@
 import { CSSProperties, useEffect, useRef } from 'react';
 import { flushSync } from 'react-dom';
 
-import { Layer, TextAlign, TextLayer } from '../editor/types';
+import { FontPicker } from './FontPicker';
+import { Layer, TextAlign, TextLayer, UploadedFont } from '../editor/types';
 import { buildTextHighlightRects, DEFAULT_TEXT_BACKGROUND_COLOR } from '../editor/textHighlight';
 import { FontOption } from '../editor/textPresets';
 import { Stage, Layer as KonvaLayer, Text, Transformer, Image as KonvaImage, Group, Rect } from 'react-konva';
@@ -30,6 +31,7 @@ type EditorCanvasProps = {
   isTextToolsOpen: boolean;
   editingTextLayerId: string | null;
   fontOptions: FontOption[];
+  uploadedFonts: UploadedFont[];
   onCanvasMouseDown: (event: Konva.KonvaEventObject<MouseEvent>) => void;
   onSelectLayer: (id: string) => void;
   onTapImageLayer: (id: string) => void;
@@ -44,6 +46,7 @@ type EditorCanvasProps = {
     backgroundEnabled?: boolean;
     backgroundColor?: string;
   }) => void;
+  onDeleteUploadedFont: (fontId: string) => void;
   onDeleteSelected: () => void;
   onStartEditingText: (id: string) => void;
   onStopEditingText: () => void;
@@ -67,12 +70,14 @@ export function EditorCanvas({
   isTextToolsOpen,
   editingTextLayerId,
   fontOptions,
+  uploadedFonts,
   onCanvasMouseDown,
   onSelectLayer,
   onTapImageLayer,
   onArmImageDrag,
   onToggleTextTools,
   onQuickTextStyleChange,
+  onDeleteUploadedFont,
   onDeleteSelected,
   onStartEditingText,
   onStopEditingText,
@@ -137,7 +142,7 @@ export function EditorCanvas({
   let selectionToolbarStyle: CSSProperties | undefined;
   let selectionPopoverStyle: CSSProperties | undefined;
   let inlineEditorStyle: CSSProperties | undefined;
-  const estimatedPopoverHeight = 388;
+  const estimatedPopoverHeight = 432;
 
   if (selectedTextLayer) {
     const toolbarWidth = 72;
@@ -419,21 +424,19 @@ export function EditorCanvas({
 
                   <label className="text-selection-field">
                     <span>Шрифт</span>
-                    <select
+                    <FontPicker
                       value={selectedTextLayer.fontFamily}
-                      className="text-selection-select"
-                      onChange={(event) =>
+                      fontOptions={fontOptions}
+                      uploadedFonts={uploadedFonts}
+                      compact
+                      ariaLabel="Открыть меню шрифтов рядом с текстом"
+                      onSelectFont={(family) =>
                         onQuickTextStyleChange({
-                          fontFamily: event.target.value,
+                          fontFamily: family,
                         })
                       }
-                    >
-                      {fontOptions.map((font) => (
-                        <option key={font.id} value={font.family}>
-                          {font.name}
-                        </option>
-                      ))}
-                    </select>
+                      onDeleteUploadedFont={onDeleteUploadedFont}
+                    />
                   </label>
 
                   <div className="text-selection-field">

@@ -17,7 +17,7 @@ import {
 } from './editor/types';
 import { DEFAULT_TEXT_BACKGROUND_COLOR } from './editor/textHighlight';
 import { DEFAULT_TEXT_STYLE_PRESET_ID, getFontOptions, getTextStylePresetById } from './editor/textPresets';
-import { rasterizeBackgroundImage, readFileAsDataUrl, loadImage } from './utils/media';
+import { dataUrlToBlob, rasterizeBackgroundImage, readFileAsDataUrl, loadImage } from './utils/media';
 import { clamp } from './utils/math';
 import { readState, saveState, type EditorPersistedState } from './utils/storage';
 
@@ -601,18 +601,42 @@ function App() {
     }
   };
 
-  const handleExport = () => {
+  const handleExport = async () => {
     const stage = stageRef.current;
     if (!stage) return;
 
+    const fileName = `${preset}-${Date.now()}.png`;
     const dataUrl = stage.toDataURL({
       pixelRatio: 3,
       mimeType: 'image/png',
     });
+    const blob = await dataUrlToBlob(dataUrl);
+    const exportFile = new File([blob], fileName, { type: 'image/png' });
+
+    try {
+      const canShareFiles =
+        typeof navigator.share === 'function' &&
+        (typeof navigator.canShare !== 'function' || navigator.canShare({ files: [exportFile] }));
+
+      if (canShareFiles) {
+        await navigator.share({
+          files: [exportFile],
+          title: fileName,
+        });
+        return;
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return;
+      }
+    }
+
+    const downloadUrl = URL.createObjectURL(blob);
     const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = `${preset}-${Date.now()}.png`;
+    link.href = downloadUrl;
+    link.download = fileName;
     link.click();
+    window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
   };
 
   const handlePresetChange = (nextPreset: Preset) => {
@@ -874,6 +898,51 @@ function App() {
     event.target.value = '';
   };
 
+  const handleDeleteUploadedFont = (fontId: string) => {
+    const fontToDelete = fonts.find((font) => font.id === fontId && font.id !== 'default');
+    if (!fontToDelete) {
+      return;
+    }
+
+    const affectedLayers = layers.filter(
+      (layer) => layer.type === 'text' && layer.fontFamily === fontToDelete.family,
+    ).length;
+    const confirmationText =
+      affectedLayers > 0
+        ? `Удалить шрифт "${fontToDelete.name}" с этого устройства? Он исчезнет из списка, а ${affectedLayers} текстовых слоёв переключатся на System Sans.`
+        : `Удалить шрифт "${fontToDelete.name}" с этого устройства? Потом его можно будет импортировать заново.`;
+
+    if (!window.confirm(confirmationText)) {
+      return;
+    }
+
+    try {
+      const fontSet = document.fonts;
+      if (Symbol.iterator in fontSet) {
+        for (const face of fontSet as unknown as Iterable<FontFace>) {
+          if (face.family === fontToDelete.family) {
+            fontSet.delete(face);
+          }
+        }
+      }
+    } catch {
+      // ignore font set cleanup failures
+    }
+
+    setFonts((prev) => prev.filter((font) => font.id !== fontToDelete.id));
+    setLayers((prev) =>
+      prev.map((layer) =>
+        layer.type === 'text' && layer.fontFamily === fontToDelete.family
+          ? {
+              ...layer,
+              fontFamily: DEFAULT_FONT.family,
+              stylePresetId: undefined,
+            }
+          : layer,
+      ),
+    );
+  };
+
   return (
     <div className="app">
       <TopBar
@@ -951,12 +1020,14 @@ function App() {
             isTextToolsOpen={isTextToolsOpen}
             editingTextLayerId={editingTextLayerId}
             fontOptions={fontOptions}
+            uploadedFonts={fonts}
             onCanvasMouseDown={handleCanvasMouseDown}
             onSelectLayer={handleSelectLayer}
             onTapImageLayer={handleTapImageLayer}
             onArmImageDrag={handleArmImageDrag}
             onToggleTextTools={handleToggleTextTools}
             onQuickTextStyleChange={handleQuickTextStyleChange}
+            onDeleteUploadedFont={handleDeleteUploadedFont}
             onDeleteSelected={removeSelectedLayer}
             onStartEditingText={handleStartEditingText}
             onStopEditingText={handleStopEditingText}
@@ -978,6 +1049,7 @@ function App() {
           onTextChange={updateTextField}
           onCropChange={updateImageCrop}
           fonts={fonts}
+          onDeleteUploadedFont={handleDeleteUploadedFont}
         />
       </main>
 
