@@ -280,6 +280,18 @@ async function readCanvasStageFrameWidth(page) {
   );
 }
 
+async function readCanvasStageInnerBounds(page) {
+  return page.locator('.canvas-stage-inner').evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return {
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+    };
+  });
+}
+
 async function dispatchPinchGesture(
   page,
   {
@@ -408,6 +420,110 @@ async function dispatchSingleTouchDrag(
 
   await client.detach();
   await page.waitForTimeout(160);
+}
+
+async function dispatchDragThenPinchGesture(
+  page,
+  {
+    startX,
+    startY,
+    dragOffsetX = 24,
+    dragOffsetY = 28,
+    secondFingerOffsetX = 96,
+    secondFingerOffsetY = 0,
+    pinchSpreadStep = 18,
+    pinchSteps = 5,
+  } = {},
+) {
+  const client = await page.context().newCDPSession(page);
+  const draggedX = startX + dragOffsetX;
+  const draggedY = startY + dragOffsetY;
+
+  await client.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [
+      {
+        x: startX,
+        y: startY,
+        radiusX: 16,
+        radiusY: 16,
+        force: 1,
+        id: 1,
+      },
+    ],
+  });
+  await page.waitForTimeout(40);
+
+  await client.send('Input.dispatchTouchEvent', {
+    type: 'touchMove',
+    touchPoints: [
+      {
+        x: draggedX,
+        y: draggedY,
+        radiusX: 16,
+        radiusY: 16,
+        force: 1,
+        id: 1,
+      },
+    ],
+  });
+  await page.waitForTimeout(40);
+
+  await client.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [
+      {
+        x: draggedX,
+        y: draggedY,
+        radiusX: 16,
+        radiusY: 16,
+        force: 1,
+        id: 1,
+      },
+      {
+        x: draggedX + secondFingerOffsetX,
+        y: draggedY + secondFingerOffsetY,
+        radiusX: 16,
+        radiusY: 16,
+        force: 1,
+        id: 2,
+      },
+    ],
+  });
+
+  for (let step = 1; step <= pinchSteps; step += 1) {
+    const spread = pinchSpreadStep * step;
+    await client.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [
+        {
+          x: draggedX - spread,
+          y: draggedY,
+          radiusX: 16,
+          radiusY: 16,
+          force: 1,
+          id: 1,
+        },
+        {
+          x: draggedX + secondFingerOffsetX + spread,
+          y: draggedY + secondFingerOffsetY,
+          radiusX: 16,
+          radiusY: 16,
+          force: 1,
+          id: 2,
+        },
+      ],
+    });
+    await page.waitForTimeout(16);
+  }
+
+  await client.send('Input.dispatchTouchEvent', {
+    type: 'touchEnd',
+    touchPoints: [],
+  });
+
+  await client.detach();
+  await page.waitForTimeout(200);
 }
 
 async function waitForSavedFontCount(page, expectedCount) {
@@ -796,25 +912,29 @@ test('pinch gestures zoom and collapse fullscreen canvas on mobile', async (t) =
   await page.getByRole('button', { name: /развернуть/i }).click();
   await page.locator('.canvas-column--expanded').waitFor({ state: 'visible' });
 
-  const initialWidth = await readCanvasStageFrameWidth(page);
-  assert(initialWidth > 300);
+  const initialFrameWidth = await readCanvasStageFrameWidth(page);
+  const initialInnerBounds = await readCanvasStageInnerBounds(page);
+  assert(initialFrameWidth > 300);
+  assert(initialInnerBounds.width > 300);
 
   await dispatchPinchGesture(page, {
     startDistance: 92,
     endDistance: 228,
   });
 
-  await page.waitForFunction((previousWidth) => {
-    const frame = document.querySelector('.canvas-stage-frame');
-    if (!(frame instanceof HTMLElement)) {
+  await page.waitForFunction((previousInnerWidth) => {
+    const inner = document.querySelector('.canvas-stage-inner');
+    if (!(inner instanceof HTMLElement)) {
       return false;
     }
 
-    return Number.parseFloat(getComputedStyle(frame).width) > previousWidth + 80;
-  }, initialWidth);
+    return inner.getBoundingClientRect().width > previousInnerWidth + 80;
+  }, initialInnerBounds.width);
 
-  const zoomedWidth = await readCanvasStageFrameWidth(page);
-  assert(zoomedWidth > initialWidth + 80);
+  const zoomedFrameWidth = await readCanvasStageFrameWidth(page);
+  const zoomedInnerBounds = await readCanvasStageInnerBounds(page);
+  assert(Math.abs(zoomedFrameWidth - initialFrameWidth) < 1.5);
+  assert(zoomedInnerBounds.width > initialInnerBounds.width + 80);
 
   await dispatchPinchGesture(page, {
     startDistance: 228,
@@ -823,6 +943,48 @@ test('pinch gestures zoom and collapse fullscreen canvas on mobile', async (t) =
 
   await page.locator('.canvas-column--compact').waitFor({ state: 'visible' });
   await page.getByRole('button', { name: /развернуть/i }).waitFor({ state: 'visible' });
+});
+
+test('second finger entering during fullscreen drag freezes layer and keeps only zoom', async (t) => {
+  const textLayer = buildTextLayer();
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      selectedLayerId: textLayer.id,
+      layers: [textLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  await page.getByRole('button', { name: /развернуть/i }).click();
+  await page.locator('.canvas-column--expanded').waitFor({ state: 'visible' });
+
+  const beforeFrameWidth = await readCanvasStageFrameWidth(page);
+  const beforeInnerBounds = await readCanvasStageInnerBounds(page);
+  const projection = await readArtboardProjection(page);
+  assert(projection);
+
+  const startX =
+    projection.frameX +
+    (projection.offsetX + textLayer.x + textLayer.width / 2) * projection.scale;
+  const startY =
+    projection.frameY +
+    (projection.offsetY + textLayer.y + textLayer.height / 2) * projection.scale;
+
+  await dispatchDragThenPinchGesture(page, {
+    startX,
+    startY,
+  });
+
+  const savedState = await readSavedState(page);
+  const frozenLayer = savedState.layers.find((layer) => layer.id === textLayer.id);
+  assert(frozenLayer);
+  assert.equal(frozenLayer.x, textLayer.x);
+  assert.equal(frozenLayer.y, textLayer.y);
+
+  const afterFrameWidth = await readCanvasStageFrameWidth(page);
+  const afterInnerBounds = await readCanvasStageInnerBounds(page);
+  assert(Math.abs(afterFrameWidth - beforeFrameWidth) < 1.5);
+  assert(afterInnerBounds.width > beforeInnerBounds.width + 80);
 });
 
 test('tap on empty canvas background clears selection and closes text tools', async (t) => {
@@ -1575,6 +1737,7 @@ test('background survives reload and clipboard sticker paste', async (t) => {
 
   await page.getByRole('button', { name: /^вставить$/i }).click();
   await waitForSavedLayerCount(page, 2);
+  await page.waitForTimeout(400);
 
   const savedState = await readSavedState(page);
   const kinds = savedState.layers.map((layer) => layer.kind);
@@ -1632,11 +1795,10 @@ test('selection toolbar can move image layer to top and bottom of stack', async 
   assert.deepEqual(savedState.layers.map((layer) => layer.id), [imageLayer.id, textLayer.id]);
 });
 
-test('overlay sticker drags immediately on mobile without drag arming', async (t) => {
+test('overlay sticker can be picked up and dragged on mobile without drag arming', async (t) => {
   const imageLayer = buildImageLayer();
   const { context, page } = await openMobilePage({
     state: buildState({
-      selectedLayerId: imageLayer.id,
       layers: [imageLayer],
     }),
   });
@@ -1664,4 +1826,5 @@ test('overlay sticker drags immediately on mobile without drag arming', async (t
   assert(movedLayer);
   assert.notEqual(movedLayer.x, imageLayer.x);
   assert.notEqual(movedLayer.y, imageLayer.y);
+  assert.equal(savedState.selectedLayerId, imageLayer.id);
 });

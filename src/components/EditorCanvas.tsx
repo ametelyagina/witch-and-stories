@@ -87,6 +87,10 @@ type EditorCanvasProps = {
   isCompactPreview: boolean;
   isFullscreenCanvas: boolean;
   fullscreenZoom: number;
+  fullscreenPan: {
+    x: number;
+    y: number;
+  };
   dragArmedImageId: string | null;
   isTextToolsOpen: boolean;
   editingTextLayerId: string | null;
@@ -116,7 +120,7 @@ type EditorCanvasProps = {
   isPreparingSavePreview: boolean;
   isSavePreviewOpen: boolean;
   onPinchExpand: () => void;
-  onPinchZoom: (zoom: number) => void;
+  onPinchZoom: (nextState: { zoom: number; panX: number; panY: number }) => void;
   onPinchCollapse: () => void;
   onStartEditingText: (id: string) => void;
   onStopEditingText: () => void;
@@ -146,6 +150,7 @@ export function EditorCanvas({
   isCompactPreview,
   isFullscreenCanvas,
   fullscreenZoom,
+  fullscreenPan,
   dragArmedImageId,
   isTextToolsOpen,
   editingTextLayerId,
@@ -185,6 +190,7 @@ export function EditorCanvas({
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [isMultiTouchActive, setIsMultiTouchActive] = useState(false);
   const touchPointersRef = useRef(new Map<number, { x: number; y: number }>());
   const multiTouchFreezeRef = useRef(false);
   const cancelledInteractionLayerIdsRef = useRef<Set<string>>(new Set());
@@ -196,17 +202,24 @@ export function EditorCanvas({
     mode: 'compact' | 'fullscreen';
     startDistance: number;
     startZoom: number;
+    anchorX: number;
+    anchorY: number;
     shouldCollapse: boolean;
   } | null>(null);
   const touchPinchGestureRef = useRef<{
     mode: 'compact' | 'fullscreen';
     startDistance: number;
     startZoom: number;
+    anchorX: number;
+    anchorY: number;
     shouldCollapse: boolean;
   } | null>(null);
   const selectedCanvasLayer = selectedLayer;
   const selectedTextLayer = isTextLayer(selectedLayer) ? selectedLayer : null;
   const [selectionMetrics, setSelectionMetrics] = useState<SelectionMetrics | null>(null);
+  const visualScale = isFullscreenCanvas ? scale * fullscreenZoom : scale;
+  const viewportPanX = isFullscreenCanvas ? fullscreenPan.x : 0;
+  const viewportPanY = isFullscreenCanvas ? fullscreenPan.y : 0;
 
   const readSelectionMetrics = (layer: Layer | null) => {
     if (!layer) {
@@ -221,22 +234,22 @@ export function EditorCanvas({
       });
 
       return {
-        left: rect.x * scale,
-        top: rect.y * scale,
-        right: (rect.x + rect.width) * scale,
-        bottom: (rect.y + rect.height) * scale,
-        width: rect.width * scale,
-        height: rect.height * scale,
+        left: rect.x * visualScale + viewportPanX,
+        top: rect.y * visualScale + viewportPanY,
+        right: (rect.x + rect.width) * visualScale + viewportPanX,
+        bottom: (rect.y + rect.height) * visualScale + viewportPanY,
+        width: rect.width * visualScale,
+        height: rect.height * visualScale,
       };
     }
 
     return {
-      left: (canvasOffsetX + layer.x) * scale,
-      top: (canvasOffsetY + layer.y) * scale,
-      right: (canvasOffsetX + layer.x + layer.width) * scale,
-      bottom: (canvasOffsetY + layer.y + layer.height) * scale,
-      width: layer.width * scale,
-      height: layer.height * scale,
+      left: (canvasOffsetX + layer.x) * visualScale + viewportPanX,
+      top: (canvasOffsetY + layer.y) * visualScale + viewportPanY,
+      right: (canvasOffsetX + layer.x + layer.width) * visualScale + viewportPanX,
+      bottom: (canvasOffsetY + layer.y + layer.height) * visualScale + viewportPanY,
+      width: layer.width * visualScale,
+      height: layer.height * visualScale,
     };
   };
 
@@ -294,6 +307,7 @@ export function EditorCanvas({
     if (touchPointersRef.current.size === 0) {
       pinchActionLockRef.current = null;
     }
+    setIsMultiTouchActive(false);
   };
 
   const readPinchDistance = () => {
@@ -313,6 +327,76 @@ export function EditorCanvas({
     const first = touches[0];
     const second = touches[1];
     return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+  };
+
+  const readPinchCenter = (element: HTMLElement) => {
+    const [first, second] = Array.from(touchPointersRef.current.values());
+    if (!first || !second) {
+      return null;
+    }
+
+    const rect = element.getBoundingClientRect();
+    return {
+      x: (first.x + second.x) / 2 - rect.left,
+      y: (first.y + second.y) / 2 - rect.top,
+    };
+  };
+
+  const readTouchPinchCenter = (touches: TouchList, element: HTMLElement) => {
+    if (touches.length < 2) {
+      return null;
+    }
+
+    const rect = element.getBoundingClientRect();
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2 - rect.left,
+      y: (touches[0].clientY + touches[1].clientY) / 2 - rect.top,
+    };
+  };
+
+  const clampFullscreenPan = (nextPanX: number, nextPanY: number, nextZoom: number) => {
+    if (!isFullscreenCanvas || nextZoom <= 1) {
+      return { x: 0, y: 0 };
+    }
+
+    const viewportWidth = stageViewportWidth * scale;
+    const viewportHeight = stageViewportHeight * scale;
+    const contentWidth = stageViewportWidth * scale * nextZoom;
+    const contentHeight = stageViewportHeight * scale * nextZoom;
+
+    return {
+      x: clampToFrame(nextPanX, viewportWidth - contentWidth, 0),
+      y: clampToFrame(nextPanY, viewportHeight - contentHeight, 0),
+    };
+  };
+
+  const buildNextFullscreenTransform = (
+    nextZoom: number,
+    center: { x: number; y: number } | null,
+    pinchGesture:
+      | {
+          anchorX: number;
+          anchorY: number;
+        }
+      | null,
+  ) => {
+    if (!center || !pinchGesture) {
+      return {
+        zoom: nextZoom,
+        panX: fullscreenPan.x,
+        panY: fullscreenPan.y,
+      };
+    }
+
+    const nextPanX = center.x - pinchGesture.anchorX * scale * nextZoom;
+    const nextPanY = center.y - pinchGesture.anchorY * scale * nextZoom;
+    const clampedPan = clampFullscreenPan(nextPanX, nextPanY, nextZoom);
+
+    return {
+      zoom: nextZoom,
+      panX: clampedPan.x,
+      panY: clampedPan.y,
+    };
   };
 
   const isTwoFingerGestureActive = () =>
@@ -421,6 +505,7 @@ export function EditorCanvas({
 
     if (touchPointersRef.current.size >= 2) {
       multiTouchFreezeRef.current = true;
+      setIsMultiTouchActive(true);
       event.preventDefault();
       cancelLongPress();
       stopSelectedLayerManipulation();
@@ -432,10 +517,19 @@ export function EditorCanvas({
       ) {
         const startDistance = readPinchDistance();
         if (startDistance > 0) {
+          const center = readPinchCenter(event.currentTarget);
           pinchGestureRef.current = {
             mode: isFullscreenCanvas ? 'fullscreen' : 'compact',
             startDistance,
             startZoom: fullscreenZoom,
+            anchorX:
+              isFullscreenCanvas && center
+                ? (center.x - fullscreenPan.x) / (scale * fullscreenZoom)
+                : 0,
+            anchorY:
+              isFullscreenCanvas && center
+                ? (center.y - fullscreenPan.y) / (scale * fullscreenZoom)
+                : 0,
             shouldCollapse: false,
           };
         }
@@ -494,7 +588,9 @@ export function EditorCanvas({
 
       const nextZoom = Math.min(2.4, Math.max(1, pinchGesture.startZoom * stretchFactor));
       pinchGesture.shouldCollapse = nextZoom <= 1.02 && stretchFactor <= 0.88;
-      onPinchZoom(nextZoom);
+      onPinchZoom(
+        buildNextFullscreenTransform(nextZoom, readPinchCenter(event.currentTarget), pinchGesture),
+      );
       return;
     }
 
@@ -523,6 +619,7 @@ export function EditorCanvas({
 
       if (touchPointersRef.current.size === 0) {
         multiTouchFreezeRef.current = false;
+        setIsMultiTouchActive(false);
         pinchActionLockRef.current = null;
       }
 
@@ -543,6 +640,7 @@ export function EditorCanvas({
 
     event.preventDefault();
     multiTouchFreezeRef.current = true;
+    setIsMultiTouchActive(true);
     cancelLongPress();
     stopSelectedLayerManipulation();
 
@@ -559,10 +657,19 @@ export function EditorCanvas({
       return;
     }
 
+    const center = readTouchPinchCenter(event.touches, event.currentTarget);
     touchPinchGestureRef.current = {
       mode: isFullscreenCanvas ? 'fullscreen' : 'compact',
       startDistance,
       startZoom: fullscreenZoom,
+      anchorX:
+        isFullscreenCanvas && center
+          ? (center.x - fullscreenPan.x) / (scale * fullscreenZoom)
+          : 0,
+      anchorY:
+        isFullscreenCanvas && center
+          ? (center.y - fullscreenPan.y) / (scale * fullscreenZoom)
+          : 0,
       shouldCollapse: false,
     };
   };
@@ -594,13 +701,21 @@ export function EditorCanvas({
 
     const nextZoom = Math.min(2.4, Math.max(1, pinchGesture.startZoom * stretchFactor));
     pinchGesture.shouldCollapse = nextZoom <= 1.02 && stretchFactor <= 0.88;
-    onPinchZoom(nextZoom);
+    onPinchZoom(
+      buildNextFullscreenTransform(
+        nextZoom,
+        readTouchPinchCenter(event.touches, event.currentTarget),
+        pinchGesture,
+      ),
+    );
   };
 
   const handleStageTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
     const pinchGesture = touchPinchGestureRef.current;
     if (!pinchGesture) {
       if (event.touches.length === 0) {
+        multiTouchFreezeRef.current = false;
+        setIsMultiTouchActive(false);
         pinchActionLockRef.current = null;
       }
       return;
@@ -615,10 +730,12 @@ export function EditorCanvas({
       touchPinchGestureRef.current = null;
       if (event.touches.length === 0) {
         multiTouchFreezeRef.current = false;
+        setIsMultiTouchActive(false);
         pinchActionLockRef.current = null;
       }
     } else if (event.touches.length === 0) {
       multiTouchFreezeRef.current = false;
+      setIsMultiTouchActive(false);
     }
   };
 
@@ -656,7 +773,8 @@ export function EditorCanvas({
   }, [
     canvasOffsetX,
     canvasOffsetY,
-    scale,
+    viewportPanX,
+    viewportPanY,
     selectedCanvasLayer,
     selectedCanvasLayer?.height,
     selectedCanvasLayer?.id,
@@ -664,6 +782,7 @@ export function EditorCanvas({
     selectedCanvasLayer?.width,
     selectedCanvasLayer?.x,
     selectedCanvasLayer?.y,
+    visualScale,
   ]);
 
   useEffect(() => {
@@ -743,41 +862,54 @@ export function EditorCanvas({
 
     if (selectedTextLayer) {
       inlineEditorStyle = {
-        left: `${(canvasOffsetX + selectedTextLayer.x) * scale}px`,
-        top: `${(canvasOffsetY + selectedTextLayer.y) * scale}px`,
-        width: `${Math.max(selectedTextLayer.width * scale, 140)}px`,
-        height: `${Math.max(selectedTextLayer.height * scale, 88)}px`,
+        left: `${(canvasOffsetX + selectedTextLayer.x) * visualScale + viewportPanX}px`,
+        top: `${(canvasOffsetY + selectedTextLayer.y) * visualScale + viewportPanY}px`,
+        width: `${Math.max(selectedTextLayer.width * visualScale, 140)}px`,
+        height: `${Math.max(selectedTextLayer.height * visualScale, 88)}px`,
         transform: `rotate(${selectedTextLayer.rotation}deg)`,
       };
     }
   }
 
-  const renderImageLayer = (layer: Extract<Layer, { type: 'image' }>) => (
-    <KonvaImage
-      key={layer.id}
-      x={layer.x}
-      y={layer.y}
-      image={layer.image}
-      draggable
-      rotation={layer.rotation}
-      width={layer.width}
-      height={layer.height}
-      hitStrokeWidth={layer.kind === 'overlay' ? 36 : 20}
-      dragBoundFunc={(position) =>
+  const renderImageLayer = (layer: Extract<Layer, { type: 'image' }>) => {
+    const crop = {
+      x: (layer.crop.x / 100) * layer.naturalWidth,
+      y: (layer.crop.y / 100) * layer.naturalHeight,
+      width: (layer.crop.width / 100) * layer.naturalWidth,
+      height: (layer.crop.height / 100) * layer.naturalHeight,
+    };
+
+    const handleOverlayPress = (event: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
+      if (layer.kind !== 'overlay' || isTwoFingerGestureActive()) {
+        return;
+      }
+
+      rememberLayerInteractionOrigin(layer);
+      cancelledInteractionLayerIdsRef.current.delete(layer.id);
+      onSelectLayer(layer.id);
+      syncSelectionMetrics(layer);
+
+      const draggableNode =
+        event.currentTarget instanceof Konva.Node ? event.currentTarget : event.target;
+      if (draggableNode instanceof Konva.Node && !draggableNode.isDragging()) {
+        draggableNode.startDrag();
+      }
+    };
+
+    const sharedProps = {
+      key: layer.id,
+      x: layer.x,
+      y: layer.y,
+      draggable: true,
+      rotation: layer.rotation,
+      dragBoundFunc: (position: { x: number; y: number }) =>
         layer.kind === 'overlay' || dragArmedImageId === layer.id
           ? position
           : {
               x: layer.x,
               y: layer.y,
-            }
-      }
-      crop={{
-        x: (layer.crop.x / 100) * layer.naturalWidth,
-        y: (layer.crop.y / 100) * layer.naturalHeight,
-        width: (layer.crop.width / 100) * layer.naturalWidth,
-        height: (layer.crop.height / 100) * layer.naturalHeight,
-      }}
-      onClick={() => {
+            },
+      onClick: () => {
         if (layer.kind === 'overlay') {
           onSelectLayer(layer.id);
         } else {
@@ -785,8 +917,8 @@ export function EditorCanvas({
         }
 
         syncSelectionMetrics(layer);
-      }}
-      onTap={() => {
+      },
+      onTap: () => {
         if (layer.kind === 'overlay') {
           onSelectLayer(layer.id);
         } else {
@@ -794,18 +926,18 @@ export function EditorCanvas({
         }
 
         syncSelectionMetrics(layer);
-      }}
-      onDblClick={() => {
+      },
+      onDblClick: () => {
         if (layer.kind !== 'overlay') {
           onArmImageDrag(layer.id);
         }
-      }}
-      onDblTap={() => {
+      },
+      onDblTap: () => {
         if (layer.kind !== 'overlay') {
           onArmImageDrag(layer.id);
         }
-      }}
-      onDragStart={(event) => {
+      },
+      onDragStart: (event: Konva.KonvaEventObject<DragEvent>) => {
         if (isTwoFingerGestureActive()) {
           event.target.stopDrag();
           event.target.position({
@@ -836,16 +968,16 @@ export function EditorCanvas({
         });
         onSelectLayer(layer.id);
         syncSelectionMetrics(layer);
-      }}
-      onDragMove={() => {
+      },
+      onDragMove: () => {
         if (isTwoFingerGestureActive()) {
           stopSelectedLayerManipulation();
           return;
         }
 
         syncSelectionMetrics(layer);
-      }}
-      onDragEnd={(event) => {
+      },
+      onDragEnd: (event: Konva.KonvaEventObject<DragEvent>) => {
         if (cancelledInteractionLayerIdsRef.current.has(layer.id)) {
           cancelledInteractionLayerIdsRef.current.delete(layer.id);
           restoreLayerInteraction(layer);
@@ -856,8 +988,8 @@ export function EditorCanvas({
         syncSelectionMetrics(layer);
         onDragEnd(layer.id, event);
         clearLayerInteractionOrigin(layer.id);
-      }}
-      onTransformStart={() => {
+      },
+      onTransformStart: () => {
         if (!isTwoFingerGestureActive()) {
           rememberLayerInteractionOrigin(layer);
           cancelledInteractionLayerIdsRef.current.delete(layer.id);
@@ -865,16 +997,16 @@ export function EditorCanvas({
         }
 
         stopSelectedLayerManipulation();
-      }}
-      onTransform={() => {
+      },
+      onTransform: () => {
         if (isTwoFingerGestureActive()) {
           stopSelectedLayerManipulation();
           return;
         }
 
         syncSelectionMetrics(layer);
-      }}
-      onTransformEnd={(event) => {
+      },
+      onTransformEnd: (event: Konva.KonvaEventObject<Event>) => {
         if (cancelledInteractionLayerIdsRef.current.has(layer.id)) {
           cancelledInteractionLayerIdsRef.current.delete(layer.id);
           restoreLayerInteraction(layer);
@@ -885,14 +1017,54 @@ export function EditorCanvas({
         syncSelectionMetrics(layer);
         onTransform(layer.id, event);
         clearLayerInteractionOrigin(layer.id);
-      }}
-      ref={(node) => {
+      },
+      ref: (node: Konva.Node | null) => {
         if (node) {
           nodeRefs.current[layer.id] = node;
         }
-      }}
-    />
-  );
+      },
+    };
+
+    if (layer.kind === 'overlay') {
+      return (
+        <Group
+          {...sharedProps}
+          width={layer.width}
+          height={layer.height}
+          onMouseDown={handleOverlayPress}
+          onTouchStart={handleOverlayPress}
+        >
+          <Rect
+            x={0}
+            y={0}
+            width={layer.width}
+            height={layer.height}
+            fill="rgba(0,0,0,0.001)"
+          />
+          <KonvaImage
+            x={0}
+            y={0}
+            image={layer.image}
+            width={layer.width}
+            height={layer.height}
+            crop={crop}
+            listening={false}
+          />
+        </Group>
+      );
+    }
+
+    return (
+      <KonvaImage
+        {...sharedProps}
+        image={layer.image}
+        width={layer.width}
+        height={layer.height}
+        hitStrokeWidth={20}
+        crop={crop}
+      />
+    );
+  };
 
   const renderTextLayer = (layer: TextLayer) => (
     <Group
@@ -1145,8 +1317,9 @@ export function EditorCanvas({
           <div
             className="canvas-stage-frame"
             style={{
-              width: `${Math.round(stageViewportWidth * scale)}px`,
-              height: `${Math.round(stageViewportHeight * scale)}px`,
+              width: `${frameWidth}px`,
+              height: `${frameHeight}px`,
+              overflow: isFullscreenCanvas ? 'hidden' : 'visible',
             }}
             onPointerDown={handleStagePointerDown}
             onPointerMove={handleStagePointerMove}
@@ -1163,7 +1336,7 @@ export function EditorCanvas({
               style={{
                 width: `${stageViewportWidth}px`,
                 height: `${stageViewportHeight}px`,
-                transform: `scale(${scale})`,
+                transform: `translate(${viewportPanX}px, ${viewportPanY}px) scale(${visualScale})`,
               }}
             >
               <Stage
@@ -1207,38 +1380,41 @@ export function EditorCanvas({
                       return renderTextLayer(layer);
                     })}
                   </Group>
-                  <Transformer
-                    ref={transformerRef}
-                    rotateEnabled
-                    ignoreStroke
-                    borderStroke="#d9683c"
-                    borderStrokeWidth={2.5}
-                    borderDash={[10, 6]}
-                    anchorFill="#fff8f0"
-                    anchorStroke="#9f4625"
-                    anchorStrokeWidth={2}
-                    anchorSize={22}
-                    anchorCornerRadius={999}
-                    rotateAnchorOffset={34}
-                    padding={14}
-                    keepRatio={selectedLayer?.type === 'image'}
-                    enabledAnchors={
-                      selectedLayer?.type === 'text'
-                        ? [
-                            'top-center',
-                            'middle-left',
-                            'middle-right',
-                            'bottom-center',
-                          ]
-                        : undefined
-                    }
-                  />
+                  {!isMultiTouchActive ? (
+                    <Transformer
+                      ref={transformerRef}
+                      rotateEnabled
+                      ignoreStroke
+                      shouldOverdrawWholeArea={selectedLayer?.type === 'image'}
+                      borderStroke="#d9683c"
+                      borderStrokeWidth={2.5}
+                      borderDash={[10, 6]}
+                      anchorFill="#fff8f0"
+                      anchorStroke="#9f4625"
+                      anchorStrokeWidth={2}
+                      anchorSize={22}
+                      anchorCornerRadius={999}
+                      rotateAnchorOffset={34}
+                      padding={14}
+                      keepRatio={selectedLayer?.type === 'image'}
+                      enabledAnchors={
+                        selectedLayer?.type === 'text'
+                          ? [
+                              'top-center',
+                              'middle-left',
+                              'middle-right',
+                              'bottom-center',
+                            ]
+                          : undefined
+                      }
+                    />
+                  ) : null}
                 </KonvaLayer>
               </Stage>
             </div>
           </div>
 
-          {selectedCanvasLayer && selectionToolbarStyle && !isEditingSelectedText ? (
+          {selectedCanvasLayer && selectionToolbarStyle && !isEditingSelectedText && !isMultiTouchActive ? (
             <>
               <div className="text-selection-toolbar" style={selectionToolbarStyle}>
                 <button
@@ -1281,7 +1457,7 @@ export function EditorCanvas({
                 ) : null}
               </div>
 
-              {selectedTextLayer && isTextToolsOpen && selectionPopoverStyle ? (
+              {selectedTextLayer && isTextToolsOpen && selectionPopoverStyle && !isMultiTouchActive ? (
                 <div className="text-selection-popover" style={selectionPopoverStyle}>
                   <button
                     type="button"
@@ -1473,7 +1649,7 @@ export function EditorCanvas({
             </>
           ) : null}
 
-          {selectedTextLayer && isEditingSelectedText && inlineEditorStyle ? (
+          {selectedTextLayer && isEditingSelectedText && inlineEditorStyle && !isMultiTouchActive ? (
             <div className="text-inline-editor" style={inlineEditorStyle}>
               <textarea
                 ref={textEditorRef}

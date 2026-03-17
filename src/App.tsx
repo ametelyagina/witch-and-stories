@@ -62,6 +62,7 @@ function App() {
   const [stageScale, setStageScale] = useState(1);
   const [compactViewportPixels, setCompactViewportPixels] = useState({ width: 0, height: 0 });
   const [fullscreenZoom, setFullscreenZoom] = useState(1);
+  const [fullscreenPan, setFullscreenPan] = useState({ x: 0, y: 0 });
   const [isHydrated, setIsHydrated] = useState(false);
   const [pendingImage, setPendingImage] = useState<{
     dataUrl: string;
@@ -124,8 +125,6 @@ function App() {
       stageSize.width,
     ],
   );
-  const effectiveStageScale =
-    isPhoneViewport && isCanvasExpanded ? stageScale * fullscreenZoom : stageScale;
   const fontOptions = useMemo(() => getFontOptions(fonts), [fonts]);
   const textStylePresets = useMemo(
     () => getAvailableTextStylePresets(customTextStylePresets),
@@ -208,6 +207,7 @@ function App() {
   useEffect(() => {
     if (!isPhoneViewport || !isCanvasExpanded) {
       setFullscreenZoom(1);
+      setFullscreenPan({ x: 0, y: 0 });
     }
   }, [isCanvasExpanded, isPhoneViewport]);
 
@@ -664,6 +664,7 @@ function App() {
     setIsCanvasExpanded(nextExpanded);
     if (!nextExpanded) {
       setFullscreenZoom(1);
+      setFullscreenPan({ x: 0, y: 0 });
     }
   };
 
@@ -673,15 +674,20 @@ function App() {
     }
 
     setFullscreenZoom(1);
+    setFullscreenPan({ x: 0, y: 0 });
     setIsCanvasExpanded(true);
   };
 
-  const handleCanvasPinchZoom = (nextZoom: number) => {
+  const handleCanvasPinchZoom = (nextState: { zoom: number; panX: number; panY: number }) => {
     if (!(isPhoneViewport && isCanvasExpanded)) {
       return;
     }
 
-    setFullscreenZoom(clamp(nextZoom, 1, 2.4));
+    setFullscreenZoom(clamp(nextState.zoom, 1, 2.4));
+    setFullscreenPan({
+      x: nextState.panX,
+      y: nextState.panY,
+    });
   };
 
   const handleCanvasPinchCollapse = () => {
@@ -1265,11 +1271,12 @@ function App() {
             stageViewportHeight={canvasWorkspace.viewportHeight}
             canvasOffsetX={canvasWorkspace.offsetX}
             canvasOffsetY={canvasWorkspace.offsetY}
-            scale={effectiveStageScale}
+            scale={stageScale}
             selectedLayer={selectedLayer}
             isCompactPreview={isPhoneViewport && !isCanvasExpanded}
             isFullscreenCanvas={isPhoneViewport && isCanvasExpanded}
             fullscreenZoom={fullscreenZoom}
+            fullscreenPan={fullscreenPan}
             dragArmedImageId={dragArmedImageId}
             isTextToolsOpen={isTextToolsOpen}
             editingTextLayerId={editingTextLayerId}
