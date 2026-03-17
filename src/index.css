@@ -521,7 +521,7 @@ input[type='color'] {
 canvas {
   display: block;
   border-radius: 22px;
-  background: #fff;
+  background: transparent;
   box-shadow: 0 22px 56px rgb(70 44 22 / 16%);
 }
 
@@ -1394,10 +1394,14 @@ canvas {
     overflow: hidden;
   }
 
-  .canvas-column--expanded .canvas-stage,
-  .canvas-column--expanded .canvas-stage-frame {
+  .canvas-column--expanded .canvas-stage {
     max-width: 100vw;
     max-height: 100dvh;
+  }
+
+  .canvas-column--expanded .canvas-stage-frame {
+    max-width: none;
+    max-height: none;
   }
 
   .canvas-column--expanded .canvas-stage {
@@ -1455,6 +1459,10 @@ canvas {
 
   .canvas-stage {
     padding: 0;
+  }
+
+  .canvas-stage-frame {
+    touch-action: none;
   }
 
   .segment,

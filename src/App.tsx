@@ -38,6 +38,59 @@ function getPresetByKey(preset: Preset) {
 
 type ClipboardImageMode = 'background' | 'overlay';
 
+type CanvasWorkspace = {
+  viewportWidth: number;
+  viewportHeight: number;
+  offsetX: number;
+  offsetY: number;
+};
+
+function getCanvasWorkspace({
+  width,
+  height,
+  layers,
+  includeFields,
+}: {
+  width: number;
+  height: number;
+  layers: Layer[];
+  includeFields: boolean;
+}): CanvasWorkspace {
+  if (!includeFields) {
+    return {
+      viewportWidth: width,
+      viewportHeight: height,
+      offsetX: 0,
+      offsetY: 0,
+    };
+  }
+
+  const fieldPadding = Math.round(Math.min(width, height) * 0.08);
+  let minX = 0;
+  let minY = 0;
+  let maxX = width;
+  let maxY = height;
+
+  for (const layer of layers) {
+    minX = Math.min(minX, layer.x);
+    minY = Math.min(minY, layer.y);
+    maxX = Math.max(maxX, layer.x + layer.width);
+    maxY = Math.max(maxY, layer.y + layer.height);
+  }
+
+  const overflowLeft = Math.max(0, -minX);
+  const overflowTop = Math.max(0, -minY);
+  const overflowRight = Math.max(0, maxX - width);
+  const overflowBottom = Math.max(0, maxY - height);
+
+  return {
+    viewportWidth: width + fieldPadding * 2 + overflowLeft + overflowRight,
+    viewportHeight: height + fieldPadding * 2 + overflowTop + overflowBottom,
+    offsetX: fieldPadding + overflowLeft,
+    offsetY: fieldPadding + overflowTop,
+  };
+}
+
 function App() {
   const [preset, setPreset] = useState<Preset>('story');
   const [layers, setLayers] = useState<Layer[]>([]);
@@ -53,6 +106,7 @@ function App() {
   const [fonts, setFonts] = useState<UploadedFont[]>([DEFAULT_FONT]);
   const [customTextStylePresets, setCustomTextStylePresets] = useState<TextStylePreset[]>([]);
   const [stageScale, setStageScale] = useState(1);
+  const [fullscreenZoom, setFullscreenZoom] = useState(1);
   const [isHydrated, setIsHydrated] = useState(false);
   const [pendingImage, setPendingImage] = useState<{
     dataUrl: string;
@@ -84,6 +138,18 @@ function App() {
   const canBringSelectedLayerToFront =
     selectedLayerIndex !== -1 && selectedLayerIndex < layers.length - 1;
   const isPhoneViewport = viewport.width <= 720;
+  const canvasWorkspace = useMemo(
+    () =>
+      getCanvasWorkspace({
+        width: stageSize.width,
+        height: stageSize.height,
+        layers,
+        includeFields: isPhoneViewport && !isCanvasExpanded,
+      }),
+    [isCanvasExpanded, isPhoneViewport, layers, stageSize.height, stageSize.width],
+  );
+  const effectiveStageScale =
+    isPhoneViewport && isCanvasExpanded ? stageScale * fullscreenZoom : stageScale;
   const fontOptions = useMemo(() => getFontOptions(fonts), [fonts]);
   const textStylePresets = useMemo(
     () => getAvailableTextStylePresets(customTextStylePresets),
@@ -111,6 +177,14 @@ function App() {
       let availableHeight = isStackedWorkbench
         ? stageSize.height
         : Math.max(220, nextViewport.height - wrapperBounds.top - 44);
+      const previewWidth =
+        nextViewport.width <= 720 && !isCanvasExpanded
+          ? canvasWorkspace.viewportWidth
+          : stageSize.width;
+      const previewHeight =
+        nextViewport.width <= 720 && !isCanvasExpanded
+          ? canvasWorkspace.viewportHeight
+          : stageSize.height;
 
       if (nextViewport.width <= 720) {
         if (isCanvasExpanded) {
@@ -121,8 +195,8 @@ function App() {
         }
       }
 
-      const widthScale = availableWidth / stageSize.width;
-      const heightScale = availableHeight / stageSize.height;
+      const widthScale = availableWidth / previewWidth;
+      const heightScale = availableHeight / previewHeight;
       const scale =
         nextViewport.width <= 720 && isCanvasExpanded
           ? Math.min(widthScale, 1)
@@ -133,11 +207,23 @@ function App() {
     resize();
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
-  }, [isCanvasExpanded, stageSize.width, stageSize.height]);
+  }, [
+    canvasWorkspace.viewportHeight,
+    canvasWorkspace.viewportWidth,
+    isCanvasExpanded,
+    stageSize.width,
+    stageSize.height,
+  ]);
 
   useEffect(() => {
     if (!isPhoneViewport && isCanvasExpanded) {
       setIsCanvasExpanded(false);
+    }
+  }, [isCanvasExpanded, isPhoneViewport]);
+
+  useEffect(() => {
+    if (!isPhoneViewport || !isCanvasExpanded) {
+      setFullscreenZoom(1);
     }
   }, [isCanvasExpanded, isPhoneViewport]);
 
@@ -590,6 +676,38 @@ function App() {
     setDragArmedImageId(null);
   };
 
+  const setCanvasExpandedState = (nextExpanded: boolean) => {
+    setIsCanvasExpanded(nextExpanded);
+    if (!nextExpanded) {
+      setFullscreenZoom(1);
+    }
+  };
+
+  const handleCanvasPinchExpand = () => {
+    if (!isPhoneViewport || isCanvasExpanded) {
+      return;
+    }
+
+    setFullscreenZoom(1);
+    setIsCanvasExpanded(true);
+  };
+
+  const handleCanvasPinchZoom = (nextZoom: number) => {
+    if (!(isPhoneViewport && isCanvasExpanded)) {
+      return;
+    }
+
+    setFullscreenZoom(clamp(nextZoom, 1, 2.4));
+  };
+
+  const handleCanvasPinchCollapse = () => {
+    if (!(isPhoneViewport && isCanvasExpanded)) {
+      return;
+    }
+
+    setCanvasExpandedState(false);
+  };
+
   const moveLayer = (direction: 'backward' | 'forward') => {
     if (!selectedLayerId) return;
 
@@ -695,6 +813,10 @@ function App() {
 
     const fileName = `${preset}-${Date.now()}.png`;
     const dataUrl = stage.toDataURL({
+      x: canvasWorkspace.offsetX,
+      y: canvasWorkspace.offsetY,
+      width: stageSize.width,
+      height: stageSize.height,
       pixelRatio: 3,
       mimeType: 'image/png',
     });
@@ -745,6 +867,10 @@ function App() {
     setIsPreparingSavePreview(true);
     try {
       const dataUrl = stage.toDataURL({
+        x: canvasWorkspace.offsetX,
+        y: canvasWorkspace.offsetY,
+        width: stageSize.width,
+        height: stageSize.height,
         pixelRatio: 3,
         mimeType: 'image/png',
       });
@@ -1131,7 +1257,7 @@ function App() {
               <button
                 type="button"
                 className={isCanvasExpanded ? 'secondary canvas-expand-button' : 'ghost canvas-expand-button'}
-                onClick={() => setIsCanvasExpanded((current) => !current)}
+                onClick={() => setCanvasExpandedState(!isCanvasExpanded)}
               >
                 {isCanvasExpanded ? 'Свернуть' : 'Развернуть'}
               </button>
@@ -1144,10 +1270,15 @@ function App() {
             layers={layers}
             width={stageSize.width}
             height={stageSize.height}
-            scale={stageScale}
+            stageViewportWidth={canvasWorkspace.viewportWidth}
+            stageViewportHeight={canvasWorkspace.viewportHeight}
+            canvasOffsetX={canvasWorkspace.offsetX}
+            canvasOffsetY={canvasWorkspace.offsetY}
+            scale={effectiveStageScale}
             selectedLayer={selectedLayer}
             isCompactPreview={isPhoneViewport && !isCanvasExpanded}
             isFullscreenCanvas={isPhoneViewport && isCanvasExpanded}
+            fullscreenZoom={fullscreenZoom}
             dragArmedImageId={dragArmedImageId}
             isTextToolsOpen={isTextToolsOpen}
             editingTextLayerId={editingTextLayerId}
@@ -1167,6 +1298,9 @@ function App() {
             onRequestSavePreview={handleRequestSavePreview}
             isPreparingSavePreview={isPreparingSavePreview}
             isSavePreviewOpen={Boolean(savePreviewUrl)}
+            onPinchExpand={handleCanvasPinchExpand}
+            onPinchZoom={handleCanvasPinchZoom}
+            onPinchCollapse={handleCanvasPinchCollapse}
             onStartEditingText={handleStartEditingText}
             onStopEditingText={handleStopEditingText}
             onInlineTextChange={updateTextField}

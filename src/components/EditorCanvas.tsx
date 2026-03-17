@@ -71,10 +71,15 @@ type EditorCanvasProps = {
   layers: Layer[];
   width: number;
   height: number;
+  stageViewportWidth: number;
+  stageViewportHeight: number;
+  canvasOffsetX: number;
+  canvasOffsetY: number;
   scale: number;
   selectedLayer: Layer | null;
   isCompactPreview: boolean;
   isFullscreenCanvas: boolean;
+  fullscreenZoom: number;
   dragArmedImageId: string | null;
   isTextToolsOpen: boolean;
   editingTextLayerId: string | null;
@@ -103,6 +108,9 @@ type EditorCanvasProps = {
   onRequestSavePreview: () => void;
   isPreparingSavePreview: boolean;
   isSavePreviewOpen: boolean;
+  onPinchExpand: () => void;
+  onPinchZoom: (zoom: number) => void;
+  onPinchCollapse: () => void;
   onStartEditingText: (id: string) => void;
   onStopEditingText: () => void;
   onInlineTextChange: (id: string, value: string) => void;
@@ -118,10 +126,15 @@ export function EditorCanvas({
   layers,
   width,
   height,
+  stageViewportWidth,
+  stageViewportHeight,
+  canvasOffsetX,
+  canvasOffsetY,
   scale,
   selectedLayer,
   isCompactPreview,
   isFullscreenCanvas,
+  fullscreenZoom,
   dragArmedImageId,
   isTextToolsOpen,
   editingTextLayerId,
@@ -141,6 +154,9 @@ export function EditorCanvas({
   onRequestSavePreview,
   isPreparingSavePreview,
   isSavePreviewOpen,
+  onPinchExpand,
+  onPinchZoom,
+  onPinchCollapse,
   onStartEditingText,
   onStopEditingText,
   onInlineTextChange,
@@ -157,6 +173,14 @@ export function EditorCanvas({
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const touchPointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchActionLockRef = useRef<'expand' | 'collapse' | null>(null);
+  const pinchGestureRef = useRef<{
+    mode: 'compact' | 'fullscreen';
+    startDistance: number;
+    startZoom: number;
+    shouldCollapse: boolean;
+  } | null>(null);
   const selectedCanvasLayer = selectedLayer;
   const selectedTextLayer = isTextLayer(selectedLayer) ? selectedLayer : null;
   const [selectionMetrics, setSelectionMetrics] = useState<SelectionMetrics | null>(null);
@@ -184,10 +208,10 @@ export function EditorCanvas({
     }
 
     return {
-      left: layer.x * scale,
-      top: layer.y * scale,
-      right: (layer.x + layer.width) * scale,
-      bottom: (layer.y + layer.height) * scale,
+      left: (canvasOffsetX + layer.x) * scale,
+      top: (canvasOffsetY + layer.y) * scale,
+      right: (canvasOffsetX + layer.x + layer.width) * scale,
+      bottom: (canvasOffsetY + layer.y + layer.height) * scale,
       width: layer.width * scale,
       height: layer.height * scale,
     };
@@ -241,19 +265,70 @@ export function EditorCanvas({
     longPressStartRef.current = null;
   };
 
+  const clearPinchState = () => {
+    pinchGestureRef.current = null;
+    if (touchPointersRef.current.size === 0) {
+      pinchActionLockRef.current = null;
+    }
+  };
+
+  const readPinchDistance = () => {
+    const [first, second] = Array.from(touchPointersRef.current.values());
+    if (!first || !second) {
+      return 0;
+    }
+
+    return Math.hypot(second.x - first.x, second.y - first.y);
+  };
+
   useEffect(() => {
     return () => {
       clearLongPressTimer();
+      touchPointersRef.current.clear();
+      pinchGestureRef.current = null;
+      pinchActionLockRef.current = null;
     };
   }, []);
 
   const handleStagePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (
-      event.pointerType !== 'touch' ||
-      isPreparingSavePreview ||
-      isSavePreviewOpen ||
-      layers.length === 0
-    ) {
+    if (event.pointerType !== 'touch') {
+      return;
+    }
+
+    touchPointersRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Ignore browsers that refuse pointer capture for synthetic or secondary touches.
+    }
+
+    if (touchPointersRef.current.size >= 2) {
+      cancelLongPress();
+
+      if (
+        !pinchActionLockRef.current &&
+        (isCompactPreview || isFullscreenCanvas) &&
+        !pinchGestureRef.current
+      ) {
+        const startDistance = readPinchDistance();
+        if (startDistance > 0) {
+          pinchGestureRef.current = {
+            mode: isFullscreenCanvas ? 'fullscreen' : 'compact',
+            startDistance,
+            startZoom: fullscreenZoom,
+            shouldCollapse: false,
+          };
+        }
+      }
+
+      return;
+    }
+
+    if (isPreparingSavePreview || isSavePreviewOpen || layers.length === 0) {
       return;
     }
 
@@ -272,6 +347,39 @@ export function EditorCanvas({
   };
 
   const handleStagePointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'touch' && touchPointersRef.current.has(event.pointerId)) {
+      touchPointersRef.current.set(event.pointerId, {
+        x: event.clientX,
+        y: event.clientY,
+      });
+    }
+
+    const pinchGesture = pinchGestureRef.current;
+    if (event.pointerType === 'touch' && pinchGesture && touchPointersRef.current.size >= 2) {
+      cancelLongPress();
+
+      const nextDistance = readPinchDistance();
+      if (nextDistance <= 0 || pinchGesture.startDistance <= 0) {
+        return;
+      }
+
+      const stretchFactor = nextDistance / pinchGesture.startDistance;
+
+      if (pinchGesture.mode === 'compact') {
+        if (stretchFactor >= 1.12 && !pinchActionLockRef.current) {
+          pinchActionLockRef.current = 'expand';
+          pinchGestureRef.current = null;
+          onPinchExpand();
+        }
+        return;
+      }
+
+      const nextZoom = Math.min(2.4, Math.max(1, pinchGesture.startZoom * stretchFactor));
+      pinchGesture.shouldCollapse = nextZoom <= 1.02 && stretchFactor <= 0.88;
+      onPinchZoom(nextZoom);
+      return;
+    }
+
     if (!longPressStartRef.current || longPressTriggeredRef.current) {
       return;
     }
@@ -283,7 +391,29 @@ export function EditorCanvas({
     }
   };
 
-  const handleStagePointerUp = () => {
+  const handleStagePointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'touch') {
+      touchPointersRef.current.delete(event.pointerId);
+      if (touchPointersRef.current.size < 2 && pinchGestureRef.current) {
+        const pinchGesture = pinchGestureRef.current;
+        if (pinchGesture.mode === 'fullscreen' && pinchGesture.shouldCollapse) {
+          pinchActionLockRef.current = 'collapse';
+          onPinchCollapse();
+        }
+        clearPinchState();
+      }
+
+      if (touchPointersRef.current.size === 0) {
+        pinchActionLockRef.current = null;
+      }
+
+      try {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      } catch {
+        // Ignore browsers that do not keep pointer capture here.
+      }
+    }
+
     cancelLongPress();
   };
 
@@ -308,8 +438,8 @@ export function EditorCanvas({
   const isEditingSelectedText = Boolean(
     selectedTextLayer && editingTextLayerId === selectedTextLayer.id,
   );
-  const frameWidth = Math.round(width * scale);
-  const frameHeight = Math.round(height * scale);
+  const frameWidth = Math.round(stageViewportWidth * scale);
+  const frameHeight = Math.round(stageViewportHeight * scale);
 
   useEffect(() => {
     if (!selectedCanvasLayer) {
@@ -319,6 +449,8 @@ export function EditorCanvas({
 
     syncSelectionMetrics(selectedCanvasLayer);
   }, [
+    canvasOffsetX,
+    canvasOffsetY,
     scale,
     selectedCanvasLayer,
     selectedCanvasLayer?.height,
@@ -406,8 +538,8 @@ export function EditorCanvas({
 
     if (selectedTextLayer) {
       inlineEditorStyle = {
-        left: `${selectedTextLayer.x * scale}px`,
-        top: `${selectedTextLayer.y * scale}px`,
+        left: `${(canvasOffsetX + selectedTextLayer.x) * scale}px`,
+        top: `${(canvasOffsetY + selectedTextLayer.y) * scale}px`,
         width: `${Math.max(selectedTextLayer.width * scale, 140)}px`,
         height: `${Math.max(selectedTextLayer.height * scale, 88)}px`,
         transform: `rotate(${selectedTextLayer.rotation}deg)`,
@@ -431,159 +563,168 @@ export function EditorCanvas({
           <div
             className="canvas-stage-frame"
             style={{
-              width: `${Math.round(width * scale)}px`,
-              height: `${Math.round(height * scale)}px`,
+              width: `${Math.round(stageViewportWidth * scale)}px`,
+              height: `${Math.round(stageViewportHeight * scale)}px`,
             }}
             onPointerDown={handleStagePointerDown}
             onPointerMove={handleStagePointerMove}
-            onPointerUp={handleStagePointerUp}
-            onPointerCancel={handleStagePointerUp}
-            onPointerLeave={handleStagePointerUp}
+            onPointerUp={handleStagePointerEnd}
+            onPointerCancel={handleStagePointerEnd}
+            onPointerLeave={handleStagePointerEnd}
           >
             <div
               className="canvas-stage-inner"
               style={{
-                width: `${width}px`,
-                height: `${height}px`,
+                width: `${stageViewportWidth}px`,
+                height: `${stageViewportHeight}px`,
                 transform: `scale(${scale})`,
               }}
             >
               <Stage
                 ref={stageRef}
-                width={width}
-                height={height}
+                width={stageViewportWidth}
+                height={stageViewportHeight}
                 onMouseDown={onCanvasMouseDown}
                 onTouchStart={onCanvasMouseDown}
               >
                 <KonvaLayer>
-                  {layers.map((layer) =>
-                    layer.type === 'image' ? (
-                      <KonvaImage
-                        key={layer.id}
-                        x={layer.x}
-                        y={layer.y}
-                        image={layer.image}
-                        draggable
-                        rotation={layer.rotation}
-                        width={layer.width}
-                        height={layer.height}
-                        hitStrokeWidth={layer.kind === 'overlay' ? 36 : 20}
-                        dragBoundFunc={(position) =>
-                          layer.kind === 'overlay' || dragArmedImageId === layer.id
-                            ? position
-                            : {
-                                x: layer.x,
-                                y: layer.y,
-                              }
-                        }
-                        crop={{
-                          x: (layer.crop.x / 100) * layer.naturalWidth,
-                          y: (layer.crop.y / 100) * layer.naturalHeight,
-                          width: (layer.crop.width / 100) * layer.naturalWidth,
-                          height: (layer.crop.height / 100) * layer.naturalHeight,
-                        }}
-                        onClick={() => {
-                          if (layer.kind === 'overlay') {
-                            onSelectLayer(layer.id);
-                          } else {
-                            onTapImageLayer(layer.id);
+                  <Rect
+                    x={canvasOffsetX}
+                    y={canvasOffsetY}
+                    width={width}
+                    height={height}
+                    fill="#fff"
+                    listening={false}
+                  />
+                  <Group x={canvasOffsetX} y={canvasOffsetY}>
+                    {layers.map((layer) =>
+                      layer.type === 'image' ? (
+                        <KonvaImage
+                          key={layer.id}
+                          x={layer.x}
+                          y={layer.y}
+                          image={layer.image}
+                          draggable
+                          rotation={layer.rotation}
+                          width={layer.width}
+                          height={layer.height}
+                          hitStrokeWidth={layer.kind === 'overlay' ? 36 : 20}
+                          dragBoundFunc={(position) =>
+                            layer.kind === 'overlay' || dragArmedImageId === layer.id
+                              ? position
+                              : {
+                                  x: layer.x,
+                                  y: layer.y,
+                                }
                           }
+                          crop={{
+                            x: (layer.crop.x / 100) * layer.naturalWidth,
+                            y: (layer.crop.y / 100) * layer.naturalHeight,
+                            width: (layer.crop.width / 100) * layer.naturalWidth,
+                            height: (layer.crop.height / 100) * layer.naturalHeight,
+                          }}
+                          onClick={() => {
+                            if (layer.kind === 'overlay') {
+                              onSelectLayer(layer.id);
+                            } else {
+                              onTapImageLayer(layer.id);
+                            }
 
-                          syncSelectionMetrics(layer);
-                        }}
-                        onTap={() => {
-                          if (layer.kind === 'overlay') {
-                            onSelectLayer(layer.id);
-                          } else {
-                            onTapImageLayer(layer.id);
-                          }
+                            syncSelectionMetrics(layer);
+                          }}
+                          onTap={() => {
+                            if (layer.kind === 'overlay') {
+                              onSelectLayer(layer.id);
+                            } else {
+                              onTapImageLayer(layer.id);
+                            }
 
-                          syncSelectionMetrics(layer);
-                        }}
-                        onDblClick={() => {
-                          if (layer.kind !== 'overlay') {
-                            onArmImageDrag(layer.id);
-                          }
-                        }}
-                        onDblTap={() => {
-                          if (layer.kind !== 'overlay') {
-                            onArmImageDrag(layer.id);
-                          }
-                        }}
-                        onDragStart={(event) => {
-                          if (layer.kind === 'overlay') {
+                            syncSelectionMetrics(layer);
+                          }}
+                          onDblClick={() => {
+                            if (layer.kind !== 'overlay') {
+                              onArmImageDrag(layer.id);
+                            }
+                          }}
+                          onDblTap={() => {
+                            if (layer.kind !== 'overlay') {
+                              onArmImageDrag(layer.id);
+                            }
+                          }}
+                          onDragStart={(event) => {
+                            if (layer.kind === 'overlay') {
+                              onSelectLayer(layer.id);
+                              syncSelectionMetrics(layer);
+                              return;
+                            }
+
+                            if (dragArmedImageId === layer.id) {
+                              return;
+                            }
+
+                            event.target.stopDrag();
+                            event.target.position({
+                              x: layer.x,
+                              y: layer.y,
+                            });
                             onSelectLayer(layer.id);
                             syncSelectionMetrics(layer);
-                            return;
-                          }
-
-                          if (dragArmedImageId === layer.id) {
-                            return;
-                          }
-
-                          event.target.stopDrag();
-                          event.target.position({
-                            x: layer.x,
-                            y: layer.y,
-                          });
-                          onSelectLayer(layer.id);
-                          syncSelectionMetrics(layer);
-                        }}
-                        onDragMove={() => syncSelectionMetrics(layer)}
-                        onDragEnd={(event) => {
-                          syncSelectionMetrics(layer);
-                          onDragEnd(layer.id, event);
-                        }}
-                        onTransform={() => syncSelectionMetrics(layer)}
-                        onTransformEnd={(event) => {
-                          syncSelectionMetrics(layer);
-                          onTransform(layer.id, event);
-                        }}
-                        ref={(node) => {
-                          if (node) {
-                            nodeRefs.current[layer.id] = node;
-                          }
-                        }}
-                      />
-                    ) : (
-                      <Group
-                        key={layer.id}
-                        x={layer.x}
-                        y={layer.y}
-                        width={layer.width}
-                        height={layer.height}
-                        draggable
-                        rotation={layer.rotation}
-                        opacity={editingTextLayerId === layer.id ? 0 : 1}
-                        onTransform={(event) => {
-                          onTransform(layer.id, event);
-                          syncSelectionMetrics(layer);
-                        }}
-                        onClick={() => {
-                          onSelectLayer(layer.id);
-                          syncSelectionMetrics(layer);
-                        }}
-                        onTap={() => {
-                          onSelectLayer(layer.id);
-                          syncSelectionMetrics(layer);
-                        }}
-                        onDblClick={() => openInlineEditor(layer.id)}
-                        onDblTap={() => openInlineEditor(layer.id)}
-                        onDragMove={() => syncSelectionMetrics(layer)}
-                        onDragEnd={(event) => {
-                          syncSelectionMetrics(layer);
-                          onDragEnd(layer.id, event);
-                        }}
-                        onTransformEnd={(event) => {
-                          syncSelectionMetrics(layer);
-                          onTransform(layer.id, event);
-                        }}
-                        ref={(node) => {
-                          if (node) {
-                            nodeRefs.current[layer.id] = node;
-                          }
-                        }}
-                      >
+                          }}
+                          onDragMove={() => syncSelectionMetrics(layer)}
+                          onDragEnd={(event) => {
+                            syncSelectionMetrics(layer);
+                            onDragEnd(layer.id, event);
+                          }}
+                          onTransform={() => syncSelectionMetrics(layer)}
+                          onTransformEnd={(event) => {
+                            syncSelectionMetrics(layer);
+                            onTransform(layer.id, event);
+                          }}
+                          ref={(node) => {
+                            if (node) {
+                              nodeRefs.current[layer.id] = node;
+                            }
+                          }}
+                        />
+                      ) : (
+                        <Group
+                          key={layer.id}
+                          x={layer.x}
+                          y={layer.y}
+                          width={layer.width}
+                          height={layer.height}
+                          draggable
+                          rotation={layer.rotation}
+                          opacity={editingTextLayerId === layer.id ? 0 : 1}
+                          onTransform={(event) => {
+                            onTransform(layer.id, event);
+                            syncSelectionMetrics(layer);
+                          }}
+                          onClick={() => {
+                            onSelectLayer(layer.id);
+                            syncSelectionMetrics(layer);
+                          }}
+                          onTap={() => {
+                            onSelectLayer(layer.id);
+                            syncSelectionMetrics(layer);
+                          }}
+                          onDblClick={() => openInlineEditor(layer.id)}
+                          onDblTap={() => openInlineEditor(layer.id)}
+                          onDragMove={() => syncSelectionMetrics(layer)}
+                          onDragEnd={(event) => {
+                            syncSelectionMetrics(layer);
+                            onDragEnd(layer.id, event);
+                          }}
+                          onTransformEnd={(event) => {
+                            syncSelectionMetrics(layer);
+                            onTransform(layer.id, event);
+                          }}
+                          ref={(node) => {
+                            if (node) {
+                              nodeRefs.current[layer.id] = node;
+                            }
+                          }}
+                        >
                         {buildTextHighlightRects(layer).map((rect, index) => {
                           const backgroundStyle =
                             layer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE;
@@ -718,24 +859,25 @@ export function EditorCanvas({
                             />
                           );
                         })}
-                        <Text
-                          x={0}
-                          y={0}
-                          text={layer.text}
-                          width={layer.width}
-                          height={layer.height}
-                          fontFamily={layer.fontFamily}
-                          fontStyle={layer.fontStyle ?? 'normal'}
-                          fontSize={layer.fontSize}
-                          fill={layer.color}
-                          align={layer.align}
-                          letterSpacing={layer.letterSpacing ?? 0}
-                          lineHeight={layer.lineHeight}
-                          wrap="word"
-                        />
-                      </Group>
-                    ),
-                  )}
+                          <Text
+                            x={0}
+                            y={0}
+                            text={layer.text}
+                            width={layer.width}
+                            height={layer.height}
+                            fontFamily={layer.fontFamily}
+                            fontStyle={layer.fontStyle ?? 'normal'}
+                            fontSize={layer.fontSize}
+                            fill={layer.color}
+                            align={layer.align}
+                            letterSpacing={layer.letterSpacing ?? 0}
+                            lineHeight={layer.lineHeight}
+                            wrap="word"
+                          />
+                        </Group>
+                      ),
+                    )}
+                  </Group>
                   <Transformer
                     ref={transformerRef}
                     rotateEnabled

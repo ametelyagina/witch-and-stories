@@ -274,6 +274,96 @@ async function waitForSavedLayerCount(page, expectedCount) {
   );
 }
 
+async function readCanvasStageFrameWidth(page) {
+  return page.locator('.canvas-stage-frame').evaluate((node) =>
+    Number.parseFloat(getComputedStyle(node).width),
+  );
+}
+
+async function dispatchPinchGesture(
+  page,
+  {
+    selector = '.canvas-stage-frame',
+    startDistance = 84,
+    endDistance = 184,
+    steps = 6,
+    centerXFactor = 0.5,
+    centerYFactor = 0.5,
+  } = {},
+) {
+  await page.evaluate(
+    async ({
+      selector,
+      startDistance,
+      endDistance,
+      steps,
+      centerXFactor,
+      centerYFactor,
+    }) => {
+      const target = document.querySelector(selector);
+      if (!(target instanceof HTMLElement)) {
+        throw new Error(`Missing pinch target: ${selector}`);
+      }
+
+      const rect = target.getBoundingClientRect();
+      const centerX = rect.left + rect.width * centerXFactor;
+      const centerY = rect.top + rect.height * centerYFactor;
+
+      const getPoints = (distance) => [
+        { x: centerX - distance / 2, y: centerY },
+        { x: centerX + distance / 2, y: centerY },
+      ];
+
+      const dispatchPointer = (type, pointerId, point, buttons) => {
+        target.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            composed: true,
+            pointerId,
+            pointerType: 'touch',
+            isPrimary: pointerId === 1,
+            button: 0,
+            buttons,
+            pressure: type === 'pointerup' ? 0 : 0.5,
+            width: 28,
+            height: 28,
+            clientX: point.x,
+            clientY: point.y,
+          }),
+        );
+      };
+
+      const [firstStart, secondStart] = getPoints(startDistance);
+      dispatchPointer('pointerdown', 1, firstStart, 1);
+      dispatchPointer('pointerdown', 2, secondStart, 1);
+
+      for (let step = 1; step <= steps; step += 1) {
+        const progress = step / steps;
+        const nextDistance = startDistance + (endDistance - startDistance) * progress;
+        const [firstPoint, secondPoint] = getPoints(nextDistance);
+        dispatchPointer('pointermove', 1, firstPoint, 1);
+        dispatchPointer('pointermove', 2, secondPoint, 1);
+        await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      }
+
+      const [firstEnd, secondEnd] = getPoints(endDistance);
+      dispatchPointer('pointerup', 1, firstEnd, 0);
+      dispatchPointer('pointerup', 2, secondEnd, 0);
+    },
+    {
+      selector,
+      startDistance,
+      endDistance,
+      steps,
+      centerXFactor,
+      centerYFactor,
+    },
+  );
+
+  await page.waitForTimeout(120);
+}
+
 async function waitForSavedFontCount(page, expectedCount) {
   await page.waitForFunction(
     async ({ storageKey, storageDbName, storageObjectStore, nextCount }) => {
@@ -410,6 +500,133 @@ test('mobile expand turns canvas into near-fullscreen stage', async (t) => {
   assert(metrics.frame.height <= metrics.viewportHeight);
   assert.equal(metrics.hasHint, false);
   assert(metrics.scrollHeight <= MOBILE_VIEWPORT.height);
+});
+
+test('compact canvas keeps overflow workspace visible around smaller preset', async (t) => {
+  const overflowTextLayer = buildTextLayer({
+    id: 'text-overflow',
+    text: 'Верни с полей',
+    y: 1260,
+    height: 240,
+  });
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      preset: 'post',
+      selectedLayerId: overflowTextLayer.id,
+      layers: [overflowTextLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  const metrics = await page.evaluate(() => {
+    const stageInner = document.querySelector('.canvas-stage-inner');
+    const frame = document.querySelector('.canvas-stage-frame');
+    const toolbar = document.querySelector('.text-selection-toolbar');
+    const readRect = (element) => {
+      if (!(element instanceof HTMLElement)) {
+        return null;
+      }
+
+      const bounds = element.getBoundingClientRect();
+      return {
+        top: bounds.top,
+        bottom: bounds.bottom,
+        width: bounds.width,
+        height: bounds.height,
+      };
+    };
+
+    return {
+      stageInnerHeight:
+        stageInner instanceof HTMLElement
+          ? Number.parseFloat(getComputedStyle(stageInner).height)
+          : 0,
+      frame: readRect(frame),
+      toolbar: readRect(toolbar),
+    };
+  });
+
+  assert(metrics.stageInnerHeight > 1500);
+  assert(metrics.frame);
+  assert(metrics.toolbar);
+  assert(metrics.toolbar.bottom <= metrics.frame.bottom + 1);
+});
+
+test('pinch out on compact canvas expands mobile stage', async (t) => {
+  const backgroundLayer = buildImageLayer({
+    id: 'background-1',
+    kind: 'background',
+    x: 0,
+    y: 0,
+    width: 1080,
+    height: 1920,
+    naturalWidth: 1080,
+    naturalHeight: 1920,
+  });
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      layers: [backgroundLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  await dispatchPinchGesture(page, {
+    startDistance: 78,
+    endDistance: 194,
+  });
+
+  await page.locator('.canvas-column--expanded').waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: /свернуть/i }).waitFor({ state: 'visible' });
+});
+
+test('pinch gestures zoom and collapse fullscreen canvas on mobile', async (t) => {
+  const backgroundLayer = buildImageLayer({
+    id: 'background-2',
+    kind: 'background',
+    x: 0,
+    y: 0,
+    width: 1080,
+    height: 1920,
+    naturalWidth: 1080,
+    naturalHeight: 1920,
+  });
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      layers: [backgroundLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  await page.getByRole('button', { name: /развернуть/i }).click();
+  await page.locator('.canvas-column--expanded').waitFor({ state: 'visible' });
+
+  const initialWidth = await readCanvasStageFrameWidth(page);
+  assert(initialWidth > 300);
+
+  await dispatchPinchGesture(page, {
+    startDistance: 92,
+    endDistance: 228,
+  });
+
+  await page.waitForFunction((previousWidth) => {
+    const frame = document.querySelector('.canvas-stage-frame');
+    if (!(frame instanceof HTMLElement)) {
+      return false;
+    }
+
+    return Number.parseFloat(getComputedStyle(frame).width) > previousWidth + 80;
+  }, initialWidth);
+
+  const zoomedWidth = await readCanvasStageFrameWidth(page);
+  assert(zoomedWidth > initialWidth + 80);
+
+  await dispatchPinchGesture(page, {
+    startDistance: 228,
+    endDistance: 68,
+  });
+
+  await page.locator('.canvas-column--compact').waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: /развернуть/i }).waitFor({ state: 'visible' });
 });
 
 test('tap on empty canvas background clears selection and closes text tools', async (t) => {
@@ -633,7 +850,7 @@ test('text highlight toggle persists and paints canvas', async (t) => {
   });
   const savedState = await readSavedState(page);
 
-  assert.deepEqual(sampleBefore.pixel, [0, 0, 0, 0]);
+  assert.deepEqual(sampleBefore.pixel, [255, 255, 255, 255]);
   assert.deepEqual(sampleAfter.pixel, [255, 243, 232, 255]);
   assert.equal(savedState.layers[0].backgroundEnabled, true);
   assert.equal(savedState.layers[0].backgroundColor, '#fff3e8');
