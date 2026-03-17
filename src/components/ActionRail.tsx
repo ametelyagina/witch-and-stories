@@ -3,8 +3,10 @@ type ActionRailProps = {
   onPaste: () => void;
   onAddText: () => void;
   onUploadFont: () => void;
+  onRecenterBackground: () => void;
   onDeleteSelected: () => void;
   onExport: () => void;
+  isRecenterBackgroundDisabled: boolean;
   isDeleteDisabled: boolean;
   isExportDisabled: boolean;
 };
@@ -34,8 +36,10 @@ export function ActionRail({
   onPaste,
   onAddText,
   onUploadFont,
+  onRecenterBackground,
   onDeleteSelected,
   onExport,
+  isRecenterBackgroundDisabled,
   isDeleteDisabled,
   isExportDisabled,
 }: ActionRailProps) {
@@ -45,6 +49,12 @@ export function ActionRail({
       <ActionButton className="ghost" label="Вставить" onClick={onPaste} />
       <ActionButton className="secondary" label="Добавить текст" onClick={onAddText} />
       <ActionButton className="ghost" label="Импорт шрифта" onClick={onUploadFont} />
+      <ActionButton
+        className="ghost"
+        disabled={isRecenterBackgroundDisabled}
+        label="Фон в центр"
+        onClick={onRecenterBackground}
+      />
       <ActionButton className="danger" disabled={isDeleteDisabled} label="Удалить слой" onClick={onDeleteSelected} />
       <ActionButton className="export" disabled={isExportDisabled} label="Экспорт PNG" onClick={onExport} />
     </aside>

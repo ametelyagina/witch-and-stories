@@ -20,6 +20,7 @@ type ImagePickerProps = {
     preset: Preset;
     mode: 'cover' | 'fit';
     crop: ImageCrop;
+    zoom: number;
   }) => void;
   onCancel: () => void;
 };
@@ -30,6 +31,11 @@ const FULL_IMAGE_CROP: ImageCrop = {
   width: 100,
   height: 100,
 };
+
+const COVER_MIN_ZOOM = 1;
+const COVER_MAX_ZOOM = 4;
+const FIT_MIN_ZOOM = 0.25;
+const FIT_MAX_ZOOM = 1;
 
 function normalizeCropArea(area: Area | null): ImageCrop {
   if (!area) {
@@ -138,6 +144,10 @@ export function ImagePicker({
       preset: selectedPreset,
       mode,
       crop: mode === 'cover' ? croppedArea : FULL_IMAGE_CROP,
+      zoom:
+        mode === 'cover'
+          ? Math.min(COVER_MAX_ZOOM, Math.max(COVER_MIN_ZOOM, zoom))
+          : Math.min(FIT_MAX_ZOOM, Math.max(FIT_MIN_ZOOM, zoom)),
     });
   };
 
@@ -194,8 +204,8 @@ export function ImagePicker({
                     zoom={zoom}
                     rotation={0}
                     aspect={aspect}
-                    minZoom={1}
-                    maxZoom={4}
+                    minZoom={COVER_MIN_ZOOM}
+                    maxZoom={COVER_MAX_ZOOM}
                     objectFit="cover"
                     showGrid={false}
                     restrictPosition
@@ -206,7 +216,14 @@ export function ImagePicker({
                     onCropAreaChange={handleCropPreview}
                   />
                 ) : (
-                  <img src={image.src} alt="" className="image-picker-fit-preview" />
+                  <img
+                    src={image.src}
+                    alt=""
+                    className="image-picker-fit-preview"
+                    style={{
+                      transform: `scale(${Math.min(FIT_MAX_ZOOM, Math.max(FIT_MIN_ZOOM, zoom))})`,
+                    }}
+                  />
                 )}
               </div>
             </div>
@@ -214,7 +231,7 @@ export function ImagePicker({
             <p className="image-picker-tip">
               {mode === 'cover'
                 ? 'Тяните фото внутри кадра и крутите колесо или ползунок для точной подгонки.'
-                : 'В режиме "Целиком" сохраняется вся картинка без обрезки, с посадкой на лист.'}
+                : 'В режиме "Целиком" вся картинка сохраняется без обрезки, а ползунок уменьшает её внутри листа.'}
             </p>
           </div>
 
@@ -279,14 +296,20 @@ export function ImagePicker({
                 <button
                   type="button"
                   className={mode === 'cover' ? 'active' : 'ghost'}
-                  onClick={() => setMode('cover')}
+                  onClick={() => {
+                    setMode('cover');
+                    setZoom((current) => Math.min(COVER_MAX_ZOOM, Math.max(COVER_MIN_ZOOM, current)));
+                  }}
                 >
                   Заполнить лист
                 </button>
                 <button
                   type="button"
                   className={mode === 'fit' ? 'active' : 'ghost'}
-                  onClick={() => setMode('fit')}
+                  onClick={() => {
+                    setMode('fit');
+                    setZoom((current) => Math.min(FIT_MAX_ZOOM, Math.max(FIT_MIN_ZOOM, current)));
+                  }}
                 >
                   Целиком
                 </button>
@@ -304,12 +327,11 @@ export function ImagePicker({
               <label className="image-picker-zoom">
                 <input
                   type="range"
-                  min="1"
-                  max="4"
+                  min={mode === 'cover' ? String(COVER_MIN_ZOOM) : String(FIT_MIN_ZOOM)}
+                  max={mode === 'cover' ? String(COVER_MAX_ZOOM) : String(FIT_MAX_ZOOM)}
                   step="0.01"
                   value={zoom}
                   onChange={(event) => setZoom(Number(event.target.value))}
-                  disabled={mode === 'fit'}
                 />
               </label>
             </section>

@@ -422,6 +422,31 @@ async function dispatchSingleTouchDrag(
   await page.waitForTimeout(160);
 }
 
+async function dispatchSingleTouchTap(page, { x, y } = {}) {
+  const client = await page.context().newCDPSession(page);
+  await client.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [
+      {
+        x,
+        y,
+        radiusX: 16,
+        radiusY: 16,
+        force: 1,
+        id: 1,
+      },
+    ],
+  });
+  await page.waitForTimeout(24);
+  await client.send('Input.dispatchTouchEvent', {
+    type: 'touchEnd',
+    touchPoints: [],
+  });
+
+  await client.detach();
+  await page.waitForTimeout(80);
+}
+
 async function dispatchDragThenPinchGesture(
   page,
   {
@@ -1578,6 +1603,11 @@ test('export uses native share sheet with png file on mobile when supported', as
                     size: file.size,
                   })) ?? [],
               });
+
+              window.dispatchEvent(new Event('blur'));
+              await new Promise((resolve) => setTimeout(resolve, 20));
+              window.dispatchEvent(new Event('focus'));
+              window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
             },
           });
         },
@@ -1594,6 +1624,9 @@ test('export uses native share sheet with png file on mobile when supported', as
   assert.match(shareCall.files[0].name, /^story-\d+\.png$/);
   assert.equal(shareCall.files[0].type, 'image/png');
   assert(shareCall.files[0].size > 0);
+
+  await page.getByRole('button', { name: /быстрые настройки текста/i }).click();
+  await page.locator('.text-selection-popover').waitFor({ state: 'visible' });
 });
 
 test('long press on canvas opens save preview image on mobile', async (t) => {
@@ -1649,6 +1682,66 @@ test('long press on canvas opens save preview image on mobile', async (t) => {
   assert(previewInfo.height > 0);
 });
 
+test('save preview resume clears transient touch state and restores text controls', async (t) => {
+  const textLayer = buildTextLayer({
+    text: 'Return clean',
+  });
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      selectedLayerId: textLayer.id,
+      layers: [textLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  await page
+    .locator('.konvajs-content canvas')
+    .dispatchEvent('pointerdown', {
+      bubbles: true,
+      pointerType: 'touch',
+      clientX: 90,
+      clientY: 140,
+      isPrimary: true,
+    });
+  await page.waitForTimeout(380);
+  await page
+    .locator('.konvajs-content canvas')
+    .dispatchEvent('pointerup', {
+      bubbles: true,
+      pointerType: 'touch',
+      clientX: 90,
+      clientY: 140,
+      isPrimary: true,
+    });
+
+  await page.locator('.save-preview-image').waitFor({ state: 'visible' });
+
+  await page.evaluate(() => {
+    window.dispatchEvent(new Event('blur'));
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
+  });
+
+  await page.waitForFunction(() => !document.querySelector('.save-preview'));
+  await page.locator('.text-selection-toolbar').waitFor({ state: 'visible' });
+
+  const projection = await readArtboardProjection(page);
+  assert(projection);
+  const tapX =
+    projection.frameX +
+    (projection.offsetX + textLayer.x + textLayer.width / 2) * projection.scale;
+  const tapY =
+    projection.frameY +
+    (projection.offsetY + textLayer.y + textLayer.height / 2) * projection.scale;
+  await dispatchSingleTouchTap(page, {
+    x: tapX,
+    y: tapY,
+  });
+
+  await page.getByRole('button', { name: /быстрые настройки текста/i }).click();
+  await page.locator('.text-selection-popover').waitFor({ state: 'visible' });
+});
+
 test('uploaded background is persisted as stage-sized asset and survives reload', async (t) => {
   const hugeSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="6000" height="9000" viewBox="0 0 6000 9000">' +
@@ -1683,6 +1776,106 @@ test('uploaded background is persisted as stage-sized asset and survives reload'
   assert.equal(savedState.layers[0].kind, 'background');
   assert.equal(savedState.layers[0].naturalWidth, 1080);
   assert.equal(savedState.layers[0].naturalHeight, 1920);
+});
+
+test('background layer is locked and recenter button restores canonical position', async (t) => {
+  const backgroundLayer = buildImageLayer({
+    kind: 'background',
+    x: 84,
+    y: 126,
+    width: 1080,
+    height: 1920,
+    naturalWidth: 1080,
+    naturalHeight: 1920,
+  });
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      layers: [backgroundLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  await page.getByRole('button', { name: /фон в центр/i }).click();
+
+  await page.waitForFunction(
+    (storageKey) => {
+      const raw = localStorage.getItem(storageKey);
+      if (!raw) {
+        return false;
+      }
+
+      const state = JSON.parse(raw);
+      const layer = state.layers?.[0];
+      return layer?.x === 0 && layer?.y === 0;
+    },
+    STORAGE_KEY,
+  );
+
+  const projection = await readArtboardProjection(page);
+  assert(projection);
+  const dragStartX = projection.frameX + projection.offsetX * projection.scale + 180;
+  const dragStartY = projection.frameY + projection.offsetY * projection.scale + 220;
+  await dispatchSingleTouchDrag(page, {
+    startX: dragStartX,
+    startY: dragStartY,
+    endX: dragStartX + 80,
+    endY: dragStartY + 100,
+  });
+
+  const savedState = await readSavedState(page);
+  assert.equal(savedState.layers[0].x, 0);
+  assert.equal(savedState.layers[0].y, 0);
+});
+
+test('fit mode can shrink the full image inside the artboard with margins', async (t) => {
+  const squareSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1000" viewBox="0 0 1000 1000">' +
+    '<rect width="1000" height="1000" fill="#d7a886"/>' +
+    '<circle cx="500" cy="500" r="260" fill="#fff2e2"/>' +
+    '</svg>';
+
+  const { context, page } = await openMobilePage();
+  t.after(async () => context.close());
+
+  await page.locator('input[type="file"][accept="image/*"]').setInputFiles({
+    name: 'square-fit.svg',
+    mimeType: 'image/svg+xml',
+    buffer: Buffer.from(squareSvg),
+  });
+
+  await page.locator('.image-picker').waitFor({ state: 'visible' });
+  await page.getByRole('tab', { name: /посадка/i }).evaluate((element) => {
+    if (element instanceof HTMLButtonElement) {
+      element.click();
+    }
+  });
+  await page.getByRole('button', { name: /^целиком$/i }).click();
+  await page.getByRole('tab', { name: /масштаб/i }).evaluate((element) => {
+    if (element instanceof HTMLButtonElement) {
+      element.click();
+    }
+  });
+  await page.locator('.image-picker-zoom input').evaluate((element) => {
+    if (!(element instanceof HTMLInputElement)) {
+      return;
+    }
+
+    const prototype = Object.getPrototypeOf(element);
+    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+    descriptor?.set?.call(element, '0.5');
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.getByRole('button', { name: /использовать фото/i }).click();
+  await waitForSavedLayerCount(page, 1);
+
+  const savedState = await readSavedState(page);
+  const backgroundLayer = savedState.layers[0];
+  assert.equal(backgroundLayer.kind, 'background');
+  assert.equal(Math.round(backgroundLayer.width), 540);
+  assert.equal(Math.round(backgroundLayer.height), 540);
+  assert.equal(Math.round(backgroundLayer.x), 270);
+  assert.equal(Math.round(backgroundLayer.y), 690);
 });
 
 test('background survives reload and clipboard sticker paste', async (t) => {

@@ -186,6 +186,7 @@ export function EditorCanvas({
   containerRef,
   onDropFiles,
 }: EditorCanvasProps) {
+  const stageFrameRef = useRef<HTMLDivElement | null>(null);
   const textEditorRef = useRef<HTMLTextAreaElement | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
@@ -214,7 +215,8 @@ export function EditorCanvas({
     anchorY: number;
     shouldCollapse: boolean;
   } | null>(null);
-  const selectedCanvasLayer = selectedLayer;
+  const selectedCanvasLayer =
+    selectedLayer?.type === 'image' && selectedLayer.kind === 'background' ? null : selectedLayer;
   const selectedTextLayer = isTextLayer(selectedLayer) ? selectedLayer : null;
   const [selectionMetrics, setSelectionMetrics] = useState<SelectionMetrics | null>(null);
   const visualScale = isFullscreenCanvas ? scale * fullscreenZoom : scale;
@@ -298,7 +300,23 @@ export function EditorCanvas({
 
   const cancelLongPress = () => {
     clearLongPressTimer();
+    longPressTriggeredRef.current = false;
     longPressStartRef.current = null;
+  };
+
+  const releaseCapturedTouchPointers = () => {
+    const frame = stageFrameRef.current;
+    if (!frame) {
+      return;
+    }
+
+    for (const pointerId of touchPointersRef.current.keys()) {
+      try {
+        frame.releasePointerCapture(pointerId);
+      } catch {
+        // Ignore stale or already released pointer captures.
+      }
+    }
   };
 
   const clearPinchState = () => {
@@ -308,6 +326,27 @@ export function EditorCanvas({
       pinchActionLockRef.current = null;
     }
     setIsMultiTouchActive(false);
+  };
+
+  const resetTransientInteractionState = ({
+    restoreSelectedLayer = false,
+  }: {
+    restoreSelectedLayer?: boolean;
+  } = {}) => {
+    clearLongPressTimer();
+    longPressTriggeredRef.current = false;
+    longPressStartRef.current = null;
+    releaseCapturedTouchPointers();
+    touchPointersRef.current.clear();
+    multiTouchFreezeRef.current = false;
+    pinchGestureRef.current = null;
+    touchPinchGestureRef.current = null;
+    pinchActionLockRef.current = null;
+    setIsMultiTouchActive(false);
+
+    if (restoreSelectedLayer) {
+      stopSelectedLayerManipulation();
+    }
   };
 
   const readPinchDistance = () => {
@@ -477,6 +516,7 @@ export function EditorCanvas({
   useEffect(() => {
     return () => {
       clearLongPressTimer();
+      releaseCapturedTouchPointers();
       touchPointersRef.current.clear();
       multiTouchFreezeRef.current = false;
       cancelledInteractionLayerIdsRef.current.clear();
@@ -486,6 +526,40 @@ export function EditorCanvas({
       pinchActionLockRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const handleSystemBoundary = () => {
+      resetTransientInteractionState({
+        restoreSelectedLayer: true,
+      });
+    };
+
+    const handleVisibilityChange = () => {
+      handleSystemBoundary();
+    };
+
+    window.addEventListener('blur', handleSystemBoundary);
+    window.addEventListener('focus', handleSystemBoundary);
+    window.addEventListener('pageshow', handleSystemBoundary);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('blur', handleSystemBoundary);
+      window.removeEventListener('focus', handleSystemBoundary);
+      window.removeEventListener('pageshow', handleSystemBoundary);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [selectedCanvasLayer]);
+
+  useEffect(() => {
+    if (!isPreparingSavePreview && !isSavePreviewOpen) {
+      return;
+    }
+
+    resetTransientInteractionState({
+      restoreSelectedLayer: true,
+    });
+  }, [isPreparingSavePreview, isSavePreviewOpen, selectedCanvasLayer]);
 
   const handleStagePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType !== 'touch') {
@@ -878,6 +952,21 @@ export function EditorCanvas({
       width: (layer.crop.width / 100) * layer.naturalWidth,
       height: (layer.crop.height / 100) * layer.naturalHeight,
     };
+
+    if (layer.kind === 'background') {
+      return (
+        <KonvaImage
+          key={layer.id}
+          x={layer.x}
+          y={layer.y}
+          image={layer.image}
+          width={layer.width}
+          height={layer.height}
+          crop={crop}
+          listening={false}
+        />
+      );
+    }
 
     const handleOverlayPress = (event: Konva.KonvaEventObject<MouseEvent | TouchEvent>) => {
       if (layer.kind !== 'overlay' || isTwoFingerGestureActive()) {
@@ -1315,6 +1404,7 @@ export function EditorCanvas({
       <div className="canvas-wrap">
         <div className="canvas-stage">
           <div
+            ref={stageFrameRef}
             className="canvas-stage-frame"
             style={{
               width: `${frameWidth}px`,

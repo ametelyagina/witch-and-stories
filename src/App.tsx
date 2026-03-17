@@ -93,6 +93,9 @@ function App() {
   const canSendSelectedLayerToBack = selectedLayerIndex > 0;
   const canBringSelectedLayerToFront =
     selectedLayerIndex !== -1 && selectedLayerIndex < layers.length - 1;
+  const hasBackgroundLayer = layers.some(
+    (layer) => layer.type === 'image' && layer.kind === 'background',
+  );
   const isPhoneViewport = viewport.width <= 720;
   const canvasWorkspace = useMemo(
     () => {
@@ -321,6 +324,14 @@ function App() {
     setEditingTextLayerId(null);
   };
 
+  useEffect(() => {
+    if (!(selectedLayer?.type === 'image' && selectedLayer.kind === 'background')) {
+      return;
+    }
+
+    dismissSelectionUi();
+  }, [selectedLayer]);
+
   const handleCanvasMouseDown = (event: Konva.KonvaEventObject<MouseEvent>) => {
     if (event.target === event.target.getStage()) {
       dismissSelectionUi();
@@ -339,6 +350,11 @@ function App() {
 
   const handleSelectLayer = (id: string) => {
     const nextLayer = layers.find((layer) => layer.id === id) || null;
+    if (nextLayer?.type === 'image' && nextLayer.kind === 'background') {
+      dismissSelectionUi();
+      return;
+    }
+
     setSelectedLayerId(id);
 
     if (nextLayer?.type !== 'text') {
@@ -354,6 +370,12 @@ function App() {
   };
 
   const handleTapImageLayer = (id: string) => {
+    const layer = layers.find((item) => item.id === id) || null;
+    if (layer?.type === 'image' && layer.kind === 'background') {
+      dismissSelectionUi();
+      return;
+    }
+
     const isSameSelectedImage = selectedLayerId === id;
     setSelectedLayerId(id);
     setDragArmedImageId(isSameSelectedImage ? id : null);
@@ -362,6 +384,12 @@ function App() {
   };
 
   const handleArmImageDrag = (id: string) => {
+    const layer = layers.find((item) => item.id === id) || null;
+    if (layer?.type === 'image' && layer.kind === 'background') {
+      dismissSelectionUi();
+      return;
+    }
+
     setSelectedLayerId(id);
     setDragArmedImageId(id);
     setIsTextToolsOpen(false);
@@ -541,6 +569,7 @@ function App() {
       presetKey: Preset;
       mode: 'fit' | 'cover';
       crop?: ImageCrop;
+      zoom?: number;
     },
   ) => {
     const targetKey = options.presetKey;
@@ -559,7 +588,9 @@ function App() {
     };
 
     if (options.mode === 'fit') {
-      const fitScale = Math.min(target.width / sourceWidth, target.height / sourceHeight);
+      const fitScale =
+        Math.min(target.width / sourceWidth, target.height / sourceHeight) *
+        clamp(options.zoom ?? 1, 0.25, 1);
       width = sourceWidth * fitScale;
       height = sourceHeight * fitScale;
       x = (target.width - width) / 2;
@@ -581,10 +612,28 @@ function App() {
     });
 
     setLayers((prev) => [...prev, layer]);
-    setSelectedLayerId(layer.id);
+    setSelectedLayerId(null);
     setEditingTextLayerId(null);
     setIsTextToolsOpen(false);
     setDragArmedImageId(null);
+  };
+
+  const handleRecenterBackground = () => {
+    setLayers((prev) =>
+      prev.map((layer) => {
+        if (!(layer.type === 'image' && layer.kind === 'background')) {
+          return layer;
+        }
+
+        return {
+          ...layer,
+          x: (stageSize.width - layer.width) / 2,
+          y: (stageSize.height - layer.height) / 2,
+          rotation: 0,
+        };
+      }),
+    );
+    dismissSelectionUi();
   };
 
   const addImageLayerFromDataUrl = async (
@@ -610,10 +659,12 @@ function App() {
     preset: pickedPreset,
     mode,
     crop,
+    zoom,
   }: {
     preset: Preset;
     mode: 'cover' | 'fit';
     crop: ImageCrop;
+    zoom: number;
   }) => {
     if (!pendingImage) return;
 
@@ -625,6 +676,7 @@ function App() {
       presetKey: pickedPreset,
       mode,
       crop,
+      zoom,
     });
     setPendingImage(null);
   };
@@ -854,6 +906,32 @@ function App() {
       return null;
     });
   };
+
+  useEffect(() => {
+    const resetTransientEditorUi = () => {
+      setIsPreparingSavePreview(false);
+      setDragArmedImageId(null);
+      setIsTextToolsOpen(false);
+      setEditingTextLayerId(null);
+      closeSavePreview();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        resetTransientEditorUi();
+      }
+    };
+
+    window.addEventListener('focus', resetTransientEditorUi);
+    window.addEventListener('pageshow', resetTransientEditorUi);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', resetTransientEditorUi);
+      window.removeEventListener('pageshow', resetTransientEditorUi);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   const handleRequestSavePreview = async () => {
     const stage = stageRef.current;
@@ -1223,8 +1301,10 @@ function App() {
           onPaste={handlePasteFromClipboard}
           onAddText={addTextLayer}
           onUploadFont={() => fontInputRef.current?.click()}
+          onRecenterBackground={handleRecenterBackground}
           onDeleteSelected={removeSelectedLayer}
           onExport={handleExport}
+          isRecenterBackgroundDisabled={!hasBackgroundLayer}
           isDeleteDisabled={!selectedLayer}
           isExportDisabled={layers.length === 0}
         />
