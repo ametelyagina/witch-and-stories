@@ -2,10 +2,32 @@ import { CSSProperties, PointerEvent as ReactPointerEvent, useEffect, useRef } f
 import { flushSync } from 'react-dom';
 
 import { FontPicker } from './FontPicker';
-import { Layer, TextAlign, TextLayer, UploadedFont } from '../editor/types';
-import { buildTextHighlightRects, DEFAULT_TEXT_BACKGROUND_COLOR } from '../editor/textHighlight';
+import {
+  ImageLayer,
+  Layer,
+  TextAlign,
+  TextBackgroundStyle,
+  TextLayer,
+  UploadedFont,
+} from '../editor/types';
+import {
+  buildTextHighlightRects,
+  DEFAULT_TEXT_BACKGROUND_COLOR,
+  DEFAULT_TEXT_BACKGROUND_STYLE,
+  TEXT_BACKGROUND_STYLE_OPTIONS,
+  withAlpha,
+} from '../editor/textHighlight';
 import { FontOption } from '../editor/textPresets';
-import { Stage, Layer as KonvaLayer, Text, Transformer, Image as KonvaImage, Group, Rect } from 'react-konva';
+import {
+  Stage,
+  Layer as KonvaLayer,
+  Text,
+  Transformer,
+  Image as KonvaImage,
+  Group,
+  Rect,
+  Shape,
+} from 'react-konva';
 import Konva from 'konva';
 import { DragEvent, MutableRefObject, RefObject } from 'react';
 
@@ -15,6 +37,65 @@ function isTextLayer(layer: Layer | null): layer is TextLayer {
 
 function clampToFrame(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function drawRoundedRectPath(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  cornerRadius: number,
+) {
+  const radius = Math.max(0, Math.min(cornerRadius, width / 2, height / 2));
+  context.beginPath();
+  context.moveTo(x + radius, y);
+  context.lineTo(x + width - radius, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + radius);
+  context.lineTo(x + width, y + height - radius);
+  context.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+  context.lineTo(x + radius, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - radius);
+  context.lineTo(x, y + radius);
+  context.quadraticCurveTo(x, y, x + radius, y);
+  context.closePath();
+}
+
+function getPrimaryBackgroundLayer(layers: Layer[]) {
+  for (let index = layers.length - 1; index >= 0; index -= 1) {
+    const layer = layers[index];
+    if (layer.type === 'image' && layer.kind !== 'overlay') {
+      return layer;
+    }
+  }
+
+  return null;
+}
+
+function mapStageRectToImageCrop(
+  layer: ImageLayer,
+  stageX: number,
+  stageY: number,
+  width: number,
+  height: number,
+) {
+  if (Math.abs(layer.rotation) > 0.1) {
+    return null;
+  }
+
+  const cropX = (layer.crop.x / 100) * layer.naturalWidth;
+  const cropY = (layer.crop.y / 100) * layer.naturalHeight;
+  const cropWidth = (layer.crop.width / 100) * layer.naturalWidth;
+  const cropHeight = (layer.crop.height / 100) * layer.naturalHeight;
+  const scaleX = cropWidth / Math.max(layer.width, 1);
+  const scaleY = cropHeight / Math.max(layer.height, 1);
+
+  return {
+    sourceX: cropX + (stageX - layer.x) * scaleX,
+    sourceY: cropY + (stageY - layer.y) * scaleY,
+    sourceWidth: width * scaleX,
+    sourceHeight: height * scaleY,
+  };
 }
 
 type EditorCanvasProps = {
@@ -45,6 +126,7 @@ type EditorCanvasProps = {
     align?: TextAlign;
     backgroundEnabled?: boolean;
     backgroundColor?: string;
+    backgroundStyle?: TextBackgroundStyle;
   }) => void;
   onDeleteUploadedFont: (fontId: string) => void;
   onDeleteSelected: () => void;
@@ -188,6 +270,7 @@ export function EditorCanvas({
     cancelLongPress();
   };
   const selectedTextLayer = isTextLayer(selectedLayer) ? selectedLayer : null;
+  const primaryBackgroundLayer = getPrimaryBackgroundLayer(layers);
   const isEditingSelectedText = Boolean(
     selectedTextLayer && editingTextLayerId === selectedTextLayer.id,
   );
@@ -209,7 +292,7 @@ export function EditorCanvas({
   let selectionToolbarStyle: CSSProperties | undefined;
   let selectionPopoverStyle: CSSProperties | undefined;
   let inlineEditorStyle: CSSProperties | undefined;
-  const estimatedPopoverHeight = 432;
+  const estimatedPopoverHeight = 520;
 
   if (selectedTextLayer) {
     const toolbarWidth = 72;
@@ -403,17 +486,142 @@ export function EditorCanvas({
                           }
                         }}
                       >
-                        {buildTextHighlightRects(layer).map((rect, index) => (
-                          <Rect
-                            key={`${layer.id}-highlight-${index}`}
-                            x={rect.x}
-                            y={rect.y}
-                            width={rect.width}
-                            height={rect.height}
-                            cornerRadius={rect.cornerRadius}
-                            fill={layer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR}
-                          />
-                        ))}
+                        {buildTextHighlightRects(layer).map((rect, index) => {
+                          const backgroundStyle =
+                            layer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE;
+                          const backgroundColor =
+                            layer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR;
+                          const stageRectX = layer.x + rect.x;
+                          const stageRectY = layer.y + rect.y;
+                          const frostedSample =
+                            backgroundStyle === 'frosted' && primaryBackgroundLayer
+                              ? mapStageRectToImageCrop(
+                                  primaryBackgroundLayer,
+                                  stageRectX,
+                                  stageRectY,
+                                  rect.width,
+                                  rect.height,
+                                )
+                              : null;
+
+                          if (backgroundStyle === 'marker') {
+                            return (
+                              <Group key={`${layer.id}-highlight-${index}`} listening={false}>
+                                <Rect
+                                  x={rect.x + 4}
+                                  y={rect.y + 2}
+                                  width={Math.max(24, rect.width - 8)}
+                                  height={Math.max(16, rect.height - 4)}
+                                  cornerRadius={Math.max(4, rect.cornerRadius - 3)}
+                                  fill={withAlpha(backgroundColor, 0.28)}
+                                  skewX={-12}
+                                />
+                                <Rect
+                                  x={rect.x}
+                                  y={rect.y}
+                                  width={rect.width}
+                                  height={rect.height}
+                                  cornerRadius={rect.cornerRadius}
+                                  fill={withAlpha(backgroundColor, 0.78)}
+                                  skewX={-12}
+                                  shadowColor={withAlpha(backgroundColor, 0.34)}
+                                  shadowBlur={6}
+                                  shadowOpacity={0.26}
+                                />
+                              </Group>
+                            );
+                          }
+
+                          if (backgroundStyle === 'frosted') {
+                            return (
+                              <Group key={`${layer.id}-highlight-${index}`} listening={false}>
+                                {frostedSample ? (
+                                  <Shape
+                                    listening={false}
+                                    sceneFunc={(context) => {
+                                      const nativeContext = (
+                                        context as Konva.Context & {
+                                          _context: CanvasRenderingContext2D;
+                                        }
+                                      )._context;
+
+                                      nativeContext.save();
+                                      drawRoundedRectPath(
+                                        nativeContext,
+                                        rect.x,
+                                        rect.y,
+                                        rect.width,
+                                        rect.height,
+                                        rect.cornerRadius,
+                                      );
+                                      nativeContext.clip();
+                                      nativeContext.filter = 'blur(14px)';
+                                      nativeContext.drawImage(
+                                        primaryBackgroundLayer.image,
+                                        frostedSample.sourceX,
+                                        frostedSample.sourceY,
+                                        frostedSample.sourceWidth,
+                                        frostedSample.sourceHeight,
+                                        rect.x,
+                                        rect.y,
+                                        rect.width,
+                                        rect.height,
+                                      );
+                                      nativeContext.filter = 'none';
+                                      nativeContext.restore();
+
+                                      nativeContext.save();
+                                      drawRoundedRectPath(
+                                        nativeContext,
+                                        rect.x,
+                                        rect.y,
+                                        rect.width,
+                                        rect.height,
+                                        rect.cornerRadius,
+                                      );
+                                      nativeContext.fillStyle = withAlpha(backgroundColor, 0.2);
+                                      nativeContext.fill();
+                                      nativeContext.lineWidth = 1.2;
+                                      nativeContext.strokeStyle = 'rgba(255, 248, 240, 0.72)';
+                                      nativeContext.stroke();
+                                      nativeContext.restore();
+                                    }}
+                                  />
+                                ) : null}
+                                <Rect
+                                  x={rect.x}
+                                  y={rect.y}
+                                  width={rect.width}
+                                  height={rect.height}
+                                  cornerRadius={rect.cornerRadius}
+                                  fill={withAlpha(backgroundColor, frostedSample ? 0.12 : 0.26)}
+                                  stroke="rgba(255, 248, 240, 0.72)"
+                                  strokeWidth={1.1}
+                                />
+                              </Group>
+                            );
+                          }
+
+                          return (
+                            <Rect
+                              key={`${layer.id}-highlight-${index}`}
+                              x={rect.x}
+                              y={rect.y}
+                              width={rect.width}
+                              height={rect.height}
+                              cornerRadius={rect.cornerRadius}
+                              fill={backgroundColor}
+                              shadowColor={
+                                backgroundStyle === 'soft'
+                                  ? withAlpha(backgroundColor, 0.3)
+                                  : undefined
+                              }
+                              shadowBlur={backgroundStyle === 'soft' ? 10 : 0}
+                              shadowOpacity={backgroundStyle === 'soft' ? 0.24 : 0}
+                              listening={false}
+                            />
+                          );
+                        })}
                         <Text
                           x={0}
                           y={0}
@@ -554,6 +762,8 @@ export function EditorCanvas({
                             backgroundEnabled: !selectedTextLayer.backgroundEnabled,
                             backgroundColor:
                               selectedTextLayer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
+                            backgroundStyle:
+                              selectedTextLayer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE,
                           })
                         }
                       >
@@ -569,6 +779,32 @@ export function EditorCanvas({
                           })
                         }
                       />
+                    </div>
+                  </div>
+
+                  <div className="text-selection-field">
+                    <span>Стиль плашки</span>
+                    <div className="text-highlight-style-grid text-highlight-style-grid--compact">
+                      {TEXT_BACKGROUND_STYLE_OPTIONS.map((style) => (
+                        <button
+                          key={style.id}
+                          type="button"
+                          className={`ghost text-highlight-style-button${
+                            (selectedTextLayer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE) ===
+                            style.id
+                              ? ' text-highlight-style-button--active'
+                              : ''
+                          }`}
+                          disabled={!selectedTextLayer.backgroundEnabled}
+                          onClick={() =>
+                            onQuickTextStyleChange({
+                              backgroundStyle: style.id,
+                            })
+                          }
+                        >
+                          {style.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
 

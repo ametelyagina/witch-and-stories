@@ -2,8 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { FontPicker } from './FontPicker';
 import { ImageCrop, Layer, TextLayer, UploadedFont } from '../editor/types';
-import { DEFAULT_TEXT_BACKGROUND_COLOR } from '../editor/textHighlight';
-import { getFontOptions, getTextStylePresetById, TEXT_STYLE_PRESETS } from '../editor/textPresets';
+import {
+  DEFAULT_TEXT_BACKGROUND_COLOR,
+  DEFAULT_TEXT_BACKGROUND_STYLE,
+  TEXT_BACKGROUND_STYLE_OPTIONS,
+} from '../editor/textHighlight';
+import {
+  getFontOptions,
+  getTextStylePresetById,
+  TextStylePreset,
+} from '../editor/textPresets';
 
 function isTextLayer(layer: Layer): layer is TextLayer {
   return layer.type === 'text';
@@ -18,6 +26,8 @@ type PropertiesPanelProps = {
   onTextChange: (id: string, value: string) => void;
   onCropChange: (id: string, axis: keyof ImageCrop, value: number) => void;
   fonts: UploadedFont[];
+  textStylePresets: TextStylePreset[];
+  onSaveTextStylePreset: () => void;
   onDeleteUploadedFont: (fontId: string) => void;
 };
 
@@ -32,6 +42,8 @@ export function PropertiesPanel({
   onTextChange,
   onCropChange,
   fonts,
+  textStylePresets,
+  onSaveTextStylePreset,
   onDeleteUploadedFont,
 }: PropertiesPanelProps) {
   const [viewportWidth, setViewportWidth] = useState(() =>
@@ -186,13 +198,22 @@ export function PropertiesPanel({
                     <h3>Шрифтовой пресет</h3>
                     <p>Быстрые типографические наборы для сторис без ручной сборки.</p>
                   </div>
-                  <span className="field-head-badge">
-                    {getTextStylePresetById(selectedLayer.stylePresetId)?.label ?? 'Custom'}
-                  </span>
+                  <div className="panel-section-actions">
+                    <span className="field-head-badge">
+                      {getTextStylePresetById(selectedLayer.stylePresetId, textStylePresets)?.label ?? 'Custom'}
+                    </span>
+                    <button
+                      type="button"
+                      className="ghost panel-inline-button"
+                      onClick={onSaveTextStylePreset}
+                    >
+                      Сохранить стиль
+                    </button>
+                  </div>
                 </div>
 
                 <div className="text-preset-grid">
-                  {TEXT_STYLE_PRESETS.map((preset) => {
+                  {textStylePresets.map((preset) => {
                     const isActive = selectedLayer.stylePresetId === preset.id;
 
                     return (
@@ -210,10 +231,18 @@ export function PropertiesPanel({
                             lineHeight: preset.lineHeight,
                             align: preset.align,
                             color: preset.color,
+                            backgroundEnabled: preset.backgroundEnabled,
+                            backgroundColor: preset.backgroundColor,
+                            backgroundStyle: preset.backgroundStyle,
                           })
                         }
                       >
-                        <span className="text-preset-label">{preset.label}</span>
+                        <div className="text-preset-meta-row">
+                          <span className="text-preset-label">{preset.label}</span>
+                          {preset.source === 'custom' ? (
+                            <span className="text-preset-badge">Saved</span>
+                          ) : null}
+                        </div>
                         <span
                           className="text-preset-sample"
                           style={{
@@ -365,6 +394,8 @@ export function PropertiesPanel({
                             backgroundEnabled: !selectedLayer.backgroundEnabled,
                             backgroundColor:
                               selectedLayer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
+                            backgroundStyle:
+                              selectedLayer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE,
                           })
                         }
                       >
@@ -386,6 +417,34 @@ export function PropertiesPanel({
                           })
                         }
                       />
+                    </div>
+                  </div>
+
+                  <div className="field">
+                    <div className="field-head">
+                      <label>Стиль плашки</label>
+                      <span>{selectedLayer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE}</span>
+                    </div>
+                    <div className="text-highlight-style-grid">
+                      {TEXT_BACKGROUND_STYLE_OPTIONS.map((style) => (
+                        <button
+                          key={style.id}
+                          type="button"
+                          className={`ghost text-highlight-style-button${
+                            (selectedLayer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE) === style.id
+                              ? ' text-highlight-style-button--active'
+                              : ''
+                          }`}
+                          disabled={!selectedLayer.backgroundEnabled}
+                          onClick={() =>
+                            applyTextChanges(selectedLayer, {
+                              backgroundStyle: style.id,
+                            })
+                          }
+                        >
+                          {style.label}
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>

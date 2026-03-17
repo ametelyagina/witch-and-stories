@@ -7,14 +7,15 @@ import {
   PersistedImageLayer,
   UploadedFont,
 } from '../editor/types';
-import { isBuiltInFontFamily } from '../editor/textPresets';
-import { DEFAULT_TEXT_BACKGROUND_COLOR } from '../editor/textHighlight';
+import { isBuiltInFontFamily, TextStylePreset } from '../editor/textPresets';
+import { DEFAULT_TEXT_BACKGROUND_COLOR, DEFAULT_TEXT_BACKGROUND_STYLE } from '../editor/textHighlight';
 import { loadImage } from './media';
 
 type PersistedEnvelope = {
   preset?: Preset;
   selectedLayerId?: string | null;
   fonts?: unknown[];
+  textStylePresets?: unknown[];
   layers?: unknown[];
   savedAt?: number;
 };
@@ -80,6 +81,74 @@ const normalizeCrop = (value: unknown): ImageCrop | null => {
   };
 };
 
+const normalizeTextStylePreset = (value: unknown): TextStylePreset | null => {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const preset = value as {
+    id?: unknown;
+    label?: unknown;
+    description?: unknown;
+    sample?: unknown;
+    source?: unknown;
+    family?: unknown;
+    fontStyle?: unknown;
+    letterSpacing?: unknown;
+    fontSize?: unknown;
+    lineHeight?: unknown;
+    align?: unknown;
+    color?: unknown;
+    backgroundEnabled?: unknown;
+    backgroundColor?: unknown;
+    backgroundStyle?: unknown;
+  };
+
+  if (
+    typeof preset.id !== 'string' ||
+    typeof preset.label !== 'string' ||
+    typeof preset.description !== 'string' ||
+    typeof preset.sample !== 'string' ||
+    (preset.source !== undefined && preset.source !== 'builtin' && preset.source !== 'custom') ||
+    typeof preset.family !== 'string' ||
+    (preset.fontStyle !== 'normal' &&
+      preset.fontStyle !== 'bold' &&
+      preset.fontStyle !== 'italic' &&
+      preset.fontStyle !== 'bold italic') ||
+    typeof preset.letterSpacing !== 'number' ||
+    typeof preset.fontSize !== 'number' ||
+    typeof preset.lineHeight !== 'number' ||
+    (preset.align !== 'left' && preset.align !== 'center' && preset.align !== 'right') ||
+    typeof preset.color !== 'string' ||
+    typeof preset.backgroundEnabled !== 'boolean' ||
+    typeof preset.backgroundColor !== 'string' ||
+    (preset.backgroundStyle !== 'soft' &&
+      preset.backgroundStyle !== 'sharp' &&
+      preset.backgroundStyle !== 'frosted' &&
+      preset.backgroundStyle !== 'marker')
+  ) {
+    return null;
+  }
+
+  return {
+    id: preset.id,
+    label: preset.label,
+    description: preset.description,
+    sample: preset.sample,
+    source: preset.source ?? 'custom',
+    family: preset.family,
+    fontStyle: preset.fontStyle,
+    letterSpacing: preset.letterSpacing,
+    fontSize: preset.fontSize,
+    lineHeight: preset.lineHeight,
+    align: preset.align,
+    color: preset.color,
+    backgroundEnabled: preset.backgroundEnabled,
+    backgroundColor: preset.backgroundColor,
+    backgroundStyle: preset.backgroundStyle,
+  };
+};
+
 const normalizeLayer = (value: unknown): PersistedLayer | null => {
   if (!value || typeof value !== 'object') return null;
 
@@ -117,6 +186,7 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
       color?: unknown;
       backgroundEnabled?: unknown;
       backgroundColor?: unknown;
+      backgroundStyle?: unknown;
       stylePresetId?: unknown;
     };
 
@@ -135,6 +205,11 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
       typeof textLayer.color !== 'string' ||
       (textLayer.backgroundEnabled !== undefined && typeof textLayer.backgroundEnabled !== 'boolean') ||
       (textLayer.backgroundColor !== undefined && typeof textLayer.backgroundColor !== 'string') ||
+      (textLayer.backgroundStyle !== undefined &&
+        textLayer.backgroundStyle !== 'soft' &&
+        textLayer.backgroundStyle !== 'sharp' &&
+        textLayer.backgroundStyle !== 'frosted' &&
+        textLayer.backgroundStyle !== 'marker') ||
       (textLayer.stylePresetId !== undefined && typeof textLayer.stylePresetId !== 'string')
     ) {
       return null;
@@ -158,6 +233,7 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
       color: textLayer.color,
       backgroundEnabled: textLayer.backgroundEnabled ?? false,
       backgroundColor: textLayer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
+      backgroundStyle: textLayer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE,
       stylePresetId: textLayer.stylePresetId,
     };
   }
@@ -325,6 +401,7 @@ export type EditorPersistedState = {
   selectedLayerId: string | null;
   layers: Layer[];
   fonts: UploadedFont[];
+  textStylePresets: TextStylePreset[];
 };
 
 export const readState = async (): Promise<EditorPersistedState | null> => {
@@ -344,6 +421,17 @@ export const readState = async (): Promise<EditorPersistedState | null> => {
     ];
 
     const fontFamilies = new Set(restoredFonts.map((font) => font.family));
+    const restoredTextStylePresets = Array.isArray(parsed.textStylePresets)
+      ? parsed.textStylePresets
+          .map(normalizeTextStylePreset)
+          .filter((preset): preset is TextStylePreset => Boolean(preset))
+          .map((preset) => ({
+            ...preset,
+            family: fontFamilies.has(preset.family) || isBuiltInFontFamily(preset.family)
+              ? preset.family
+              : DEFAULT_FONT.family,
+          }))
+      : [];
 
     await Promise.all(
       restoredFonts.map(async (font) => {
@@ -407,6 +495,7 @@ export const readState = async (): Promise<EditorPersistedState | null> => {
       selectedLayerId: hasSelectedLayer ? nextSelectedLayerId : null,
       layers: normalized,
       fonts: restoredFonts,
+      textStylePresets: restoredTextStylePresets,
     };
   } catch {
     return null;
@@ -427,6 +516,7 @@ export const saveState = async (state: EditorPersistedState) => {
     preset: state.preset,
     selectedLayerId: state.selectedLayerId,
     fonts: state.fonts,
+    textStylePresets: state.textStylePresets,
     layers: serializableLayers,
     savedAt: Date.now(),
   };

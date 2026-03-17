@@ -34,6 +34,7 @@ after(async () => {
 function buildState({
   preset = 'story',
   selectedLayerId = null,
+  textStylePresets = [],
   layers = [],
 } = {}) {
   return {
@@ -46,6 +47,7 @@ function buildState({
         family: 'Arial',
       },
     ],
+    textStylePresets,
     layers,
   };
 }
@@ -64,6 +66,7 @@ function buildTextLayer(overrides = {}) {
     color: '#241d17',
     backgroundEnabled: false,
     backgroundColor: '#fff3e8',
+    backgroundStyle: 'soft',
     x: 120,
     y: 320,
     width: 720,
@@ -476,6 +479,95 @@ test('text highlight toggle persists and paints canvas', async (t) => {
   assert.deepEqual(sampleAfter.pixel, [255, 243, 232, 255]);
   assert.equal(savedState.layers[0].backgroundEnabled, true);
   assert.equal(savedState.layers[0].backgroundColor, '#fff3e8');
+});
+
+test('text highlight style persists from quick text tools', async (t) => {
+  const textLayer = buildTextLayer({
+    text: 'Glass test',
+  });
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      selectedLayerId: textLayer.id,
+      layers: [textLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  await page.getByRole('button', { name: /быстрые настройки текста/i }).click();
+  await page.locator('.text-selection-highlight-button').click();
+  await page
+    .locator('.text-selection-popover')
+    .getByRole('button', { name: 'Glass' })
+    .click();
+
+  await page.waitForFunction((storageKey) => {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) {
+      return false;
+    }
+
+    const state = JSON.parse(raw);
+    return state.layers?.[0]?.backgroundStyle === 'frosted';
+  }, STORAGE_KEY);
+
+  const savedState = await readSavedState(page);
+  assert.equal(savedState.layers[0].backgroundEnabled, true);
+  assert.equal(savedState.layers[0].backgroundStyle, 'frosted');
+});
+
+test('saved text style appears in presets and survives reload', async (t) => {
+  const textLayer = buildTextLayer({
+    text: 'Собранный стиль',
+    fontStyle: 'italic',
+    letterSpacing: 1.2,
+    fontSize: 102,
+    lineHeight: 1.45,
+    align: 'center',
+    color: '#d9683c',
+    backgroundEnabled: true,
+    backgroundColor: '#f6d6c7',
+    backgroundStyle: 'marker',
+  });
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      selectedLayerId: textLayer.id,
+      layers: [textLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  await page.getByRole('tab', { name: 'Пресет' }).click();
+  await page.getByRole('button', { name: /сохранить стиль/i }).click();
+  await page.waitForFunction((storageKey) => {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) {
+      return false;
+    }
+
+    const state = JSON.parse(raw);
+    return Array.isArray(state.textStylePresets) && state.textStylePresets.length === 1;
+  }, STORAGE_KEY);
+
+  await page.getByRole('button', { name: /сохранить стиль/i }).click();
+  await page.waitForTimeout(80);
+
+  let savedState = await readSavedState(page);
+  assert.equal(savedState.textStylePresets.length, 1);
+  assert.equal(savedState.textStylePresets[0].label, 'Мой стиль 1');
+  assert.equal(savedState.textStylePresets[0].fontSize, 102);
+  assert.equal(savedState.textStylePresets[0].lineHeight, 1.45);
+  assert.equal(savedState.textStylePresets[0].align, 'center');
+  assert.equal(savedState.textStylePresets[0].backgroundEnabled, true);
+  assert.equal(savedState.textStylePresets[0].backgroundStyle, 'marker');
+
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.getByRole('tab', { name: 'Пресет' }).click();
+
+  const presetLabels = await page.locator('.text-preset-label').allTextContents();
+  assert.ok(presetLabels.includes('Мой стиль 1'));
+
+  savedState = await readSavedState(page);
+  assert.equal(savedState.textStylePresets.length, 1);
 });
 
 test('text tools popover stays clear of selected text on mobile', async (t) => {

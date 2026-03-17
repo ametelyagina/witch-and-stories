@@ -1,4 +1,12 @@
-import { DEFAULT_FONT, TextAlign, TextFontStyle, UploadedFont } from './types';
+import {
+  DEFAULT_FONT,
+  TextAlign,
+  TextBackgroundStyle,
+  TextFontStyle,
+  TextLayer,
+  UploadedFont,
+} from './types';
+import { DEFAULT_TEXT_BACKGROUND_COLOR, DEFAULT_TEXT_BACKGROUND_STYLE } from './textHighlight';
 
 export type FontOption = {
   id: string;
@@ -12,6 +20,7 @@ export type TextStylePreset = {
   label: string;
   description: string;
   sample: string;
+  source?: 'builtin' | 'custom';
   family: string;
   fontStyle: TextFontStyle;
   letterSpacing: number;
@@ -19,6 +28,9 @@ export type TextStylePreset = {
   lineHeight: number;
   align: TextAlign;
   color: string;
+  backgroundEnabled: boolean;
+  backgroundColor: string;
+  backgroundStyle: TextBackgroundStyle;
 };
 
 export const BUILT_IN_FONT_OPTIONS: FontOption[] = [
@@ -62,12 +74,13 @@ export const BUILT_IN_FONT_OPTIONS: FontOption[] = [
 
 export const DEFAULT_TEXT_STYLE_PRESET_ID = 'story-clean';
 
-export const TEXT_STYLE_PRESETS: TextStylePreset[] = [
+export const BUILT_IN_TEXT_STYLE_PRESETS: TextStylePreset[] = [
   {
     id: 'story-clean',
     label: 'Clean',
     description: 'Чистый базовый sans для быстрых сторис.',
-    sample: 'Быстро и чисто',
+    sample: 'Быстро\nи чисто',
+    source: 'builtin',
     family: DEFAULT_FONT.family,
     fontStyle: 'bold',
     letterSpacing: 0,
@@ -75,12 +88,16 @@ export const TEXT_STYLE_PRESETS: TextStylePreset[] = [
     lineHeight: 1.08,
     align: 'left',
     color: '#241d17',
+    backgroundEnabled: false,
+    backgroundColor: DEFAULT_TEXT_BACKGROUND_COLOR,
+    backgroundStyle: DEFAULT_TEXT_BACKGROUND_STYLE,
   },
   {
     id: 'editorial-serif',
     label: 'Editorial',
     description: 'Сдержанный serif для цитат и заголовков.',
-    sample: 'Тихий акцент',
+    sample: 'Тихий\nакцент',
+    source: 'builtin',
     family: 'Georgia, "Times New Roman", serif',
     fontStyle: 'italic',
     letterSpacing: 0,
@@ -88,12 +105,16 @@ export const TEXT_STYLE_PRESETS: TextStylePreset[] = [
     lineHeight: 1.12,
     align: 'left',
     color: '#2e2118',
+    backgroundEnabled: false,
+    backgroundColor: DEFAULT_TEXT_BACKGROUND_COLOR,
+    backgroundStyle: DEFAULT_TEXT_BACKGROUND_STYLE,
   },
   {
     id: 'poster-bold',
     label: 'Poster',
     description: 'Плотный display-стиль для крупных фраз.',
     sample: 'Смело',
+    source: 'builtin',
     family: 'Impact, "Arial Black", sans-serif',
     fontStyle: 'normal',
     letterSpacing: 1.4,
@@ -101,12 +122,16 @@ export const TEXT_STYLE_PRESETS: TextStylePreset[] = [
     lineHeight: 0.92,
     align: 'left',
     color: '#241d17',
+    backgroundEnabled: false,
+    backgroundColor: DEFAULT_TEXT_BACKGROUND_COLOR,
+    backgroundStyle: DEFAULT_TEXT_BACKGROUND_STYLE,
   },
   {
     id: 'soft-humanist',
     label: 'Soft',
     description: 'Мягкий humanist sans для спокойного набора.',
-    sample: 'Дышащий текст',
+    sample: 'Мягкий\nритм',
+    source: 'builtin',
     family: '"Trebuchet MS", "Verdana", sans-serif',
     fontStyle: 'normal',
     letterSpacing: 0.2,
@@ -114,12 +139,16 @@ export const TEXT_STYLE_PRESETS: TextStylePreset[] = [
     lineHeight: 1.24,
     align: 'left',
     color: '#433328',
+    backgroundEnabled: false,
+    backgroundColor: DEFAULT_TEXT_BACKGROUND_COLOR,
+    backgroundStyle: DEFAULT_TEXT_BACKGROUND_STYLE,
   },
   {
     id: 'mono-note',
     label: 'Mono',
     description: 'Записка или план с характером monospace.',
-    sample: 'plan / note',
+    sample: 'plan\n/ note',
+    source: 'builtin',
     family: '"Courier New", monospace',
     fontStyle: 'bold',
     letterSpacing: 0.9,
@@ -127,12 +156,96 @@ export const TEXT_STYLE_PRESETS: TextStylePreset[] = [
     lineHeight: 1.18,
     align: 'left',
     color: '#241d17',
+    backgroundEnabled: false,
+    backgroundColor: DEFAULT_TEXT_BACKGROUND_COLOR,
+    backgroundStyle: DEFAULT_TEXT_BACKGROUND_STYLE,
   },
 ];
 
-export function getTextStylePresetById(id?: string | null) {
+export const TEXT_STYLE_PRESETS = BUILT_IN_TEXT_STYLE_PRESETS;
+
+export function getAvailableTextStylePresets(customPresets: TextStylePreset[] = []) {
+  const merged = [...customPresets, ...BUILT_IN_TEXT_STYLE_PRESETS];
+  const seen = new Set<string>();
+
+  return merged.filter((preset) => {
+    if (seen.has(preset.id)) {
+      return false;
+    }
+
+    seen.add(preset.id);
+    return true;
+  });
+}
+
+export function getTextStylePresetById(id?: string | null, customPresets: TextStylePreset[] = []) {
   if (!id) return null;
-  return TEXT_STYLE_PRESETS.find((preset) => preset.id === id) ?? null;
+  return getAvailableTextStylePresets(customPresets).find((preset) => preset.id === id) ?? null;
+}
+
+export function doesTextStylePresetMatchLayer(preset: TextStylePreset, layer: TextLayer) {
+  return (
+    preset.family === layer.fontFamily &&
+    preset.fontStyle === (layer.fontStyle ?? 'normal') &&
+    preset.letterSpacing === (layer.letterSpacing ?? 0) &&
+    preset.fontSize === layer.fontSize &&
+    preset.lineHeight === layer.lineHeight &&
+    preset.align === layer.align &&
+    preset.color === layer.color &&
+    preset.backgroundEnabled === Boolean(layer.backgroundEnabled) &&
+    preset.backgroundColor === (layer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR) &&
+    preset.backgroundStyle === (layer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE)
+  );
+}
+
+export function getNextCustomTextStylePresetLabel(customPresets: TextStylePreset[]) {
+  const usedNumbers = customPresets.reduce<number[]>((numbers, preset) => {
+    const match = /^Мой стиль (\d+)$/i.exec(preset.label.trim());
+    if (!match) {
+      return numbers;
+    }
+
+    return [...numbers, Number.parseInt(match[1], 10)];
+  }, []);
+  const nextNumber = usedNumbers.length ? Math.max(...usedNumbers) + 1 : 1;
+  return `Мой стиль ${nextNumber}`;
+}
+
+export function createCustomTextStylePreset(id: string, layer: TextLayer, label: string): TextStylePreset {
+  const sampleSource = layer.text.replace(/\r/g, '').trim();
+  const sampleLines = sampleSource
+    ? sampleSource
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(0, 2)
+    : [];
+  const sample =
+    sampleLines.length > 0
+      ? sampleLines
+          .map((line) => (line.length > 14 ? `${line.slice(0, 14).trimEnd()}…` : line))
+          .join('\n')
+      : 'Мой\nстиль';
+
+  return {
+    id,
+    label,
+    description: layer.backgroundEnabled
+      ? 'Сохранённый стиль с типографикой и плашкой.'
+      : 'Сохранённый стиль текста без ручной пересборки.',
+    sample,
+    source: 'custom',
+    family: layer.fontFamily,
+    fontStyle: layer.fontStyle ?? 'normal',
+    letterSpacing: layer.letterSpacing ?? 0,
+    fontSize: layer.fontSize,
+    lineHeight: layer.lineHeight,
+    align: layer.align,
+    color: layer.color,
+    backgroundEnabled: Boolean(layer.backgroundEnabled),
+    backgroundColor: layer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
+    backgroundStyle: layer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE,
+  };
 }
 
 export function isBuiltInFontFamily(family: string) {

@@ -11,12 +11,23 @@ import {
   DEFAULT_FONT,
   ImageCrop,
   Layer,
+  TextBackgroundStyle,
+  TextLayer,
   UploadedFont,
   Preset,
   PRESETS,
 } from './editor/types';
-import { DEFAULT_TEXT_BACKGROUND_COLOR } from './editor/textHighlight';
-import { DEFAULT_TEXT_STYLE_PRESET_ID, getFontOptions, getTextStylePresetById } from './editor/textPresets';
+import { DEFAULT_TEXT_BACKGROUND_COLOR, DEFAULT_TEXT_BACKGROUND_STYLE } from './editor/textHighlight';
+import {
+  createCustomTextStylePreset,
+  DEFAULT_TEXT_STYLE_PRESET_ID,
+  doesTextStylePresetMatchLayer,
+  getAvailableTextStylePresets,
+  getFontOptions,
+  getNextCustomTextStylePresetLabel,
+  getTextStylePresetById,
+  TextStylePreset,
+} from './editor/textPresets';
 import { dataUrlToBlob, rasterizeBackgroundImage, readFileAsDataUrl, loadImage } from './utils/media';
 import { clamp } from './utils/math';
 import { readState, saveState, type EditorPersistedState } from './utils/storage';
@@ -40,6 +51,7 @@ function App() {
   const [isTextToolsOpen, setIsTextToolsOpen] = useState(false);
   const [editingTextLayerId, setEditingTextLayerId] = useState<string | null>(null);
   const [fonts, setFonts] = useState<UploadedFont[]>([DEFAULT_FONT]);
+  const [customTextStylePresets, setCustomTextStylePresets] = useState<TextStylePreset[]>([]);
   const [stageScale, setStageScale] = useState(1);
   const [isHydrated, setIsHydrated] = useState(false);
   const [pendingImage, setPendingImage] = useState<{
@@ -56,7 +68,7 @@ function App() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const fontInputRef = useRef<HTMLInputElement | null>(null);
   const persistedStateRef = useRef<EditorPersistedState | null>(null);
-  const defaultTextPreset = getTextStylePresetById(DEFAULT_TEXT_STYLE_PRESET_ID);
+  const defaultTextPreset = getTextStylePresetById(DEFAULT_TEXT_STYLE_PRESET_ID, customTextStylePresets);
 
   const stageSize = useMemo(() => getPresetByKey(preset), [preset]);
 
@@ -66,6 +78,10 @@ function App() {
   );
   const isPhoneViewport = viewport.width <= 720;
   const fontOptions = useMemo(() => getFontOptions(fonts), [fonts]);
+  const textStylePresets = useMemo(
+    () => getAvailableTextStylePresets(customTextStylePresets),
+    [customTextStylePresets],
+  );
 
   useEffect(() => {
     const resize = () => {
@@ -156,6 +172,7 @@ function App() {
         setPreset(restored.preset);
         setLayers(restored.layers);
         setFonts(restored.fonts);
+        setCustomTextStylePresets(restored.textStylePresets);
         setSelectedLayerId(restored.selectedLayerId);
       }
       setIsHydrated(true);
@@ -169,10 +186,11 @@ function App() {
       selectedLayerId,
       layers,
       fonts,
+      textStylePresets: customTextStylePresets,
     };
     persistedStateRef.current = snapshot;
     void saveState(snapshot);
-  }, [fonts, isHydrated, layers, preset, selectedLayerId]);
+  }, [customTextStylePresets, fonts, isHydrated, layers, preset, selectedLayerId]);
 
   useEffect(() => {
     const flushPersistedState = () => {
@@ -286,6 +304,7 @@ function App() {
     align?: 'left' | 'center' | 'right';
     backgroundEnabled?: boolean;
     backgroundColor?: string;
+    backgroundStyle?: TextBackgroundStyle;
   }) => {
     if (selectedLayer?.type !== 'text') {
       return;
@@ -294,6 +313,34 @@ function App() {
     updateLayer(selectedLayer.id, {
       ...changes,
       stylePresetId: undefined,
+    });
+  };
+
+  const handleSaveCurrentTextStylePreset = () => {
+    if (selectedLayer?.type !== 'text') {
+      return;
+    }
+
+    const matchingCustomPreset = customTextStylePresets.find((preset) =>
+      doesTextStylePresetMatchLayer(preset, selectedLayer as TextLayer),
+    );
+
+    if (matchingCustomPreset) {
+      updateLayer(selectedLayer.id, {
+        stylePresetId: matchingCustomPreset.id,
+      });
+      return;
+    }
+
+    const nextPreset = createCustomTextStylePreset(
+      `custom-style-${nanoid(8)}`,
+      selectedLayer as TextLayer,
+      getNextCustomTextStylePresetLabel(customTextStylePresets),
+    );
+
+    setCustomTextStylePresets((prev) => [nextPreset, ...prev]);
+    updateLayer(selectedLayer.id, {
+      stylePresetId: nextPreset.id,
     });
   };
 
@@ -506,6 +553,7 @@ function App() {
       color: defaultTextPreset?.color ?? '#241d17',
       backgroundEnabled: false,
       backgroundColor: DEFAULT_TEXT_BACKGROUND_COLOR,
+      backgroundStyle: DEFAULT_TEXT_BACKGROUND_STYLE,
       stylePresetId: defaultTextPreset?.id,
       x: stageSize.width * 0.08,
       y: stageSize.height * 0.12,
@@ -966,6 +1014,16 @@ function App() {
     }
 
     setFonts((prev) => prev.filter((font) => font.id !== fontToDelete.id));
+    setCustomTextStylePresets((prev) =>
+      prev.map((preset) =>
+        preset.family === fontToDelete.family
+          ? {
+              ...preset,
+              family: DEFAULT_FONT.family,
+            }
+          : preset,
+      ),
+    );
     setLayers((prev) =>
       prev.map((layer) =>
         layer.type === 'text' && layer.fontFamily === fontToDelete.family
@@ -1088,6 +1146,8 @@ function App() {
           onTextChange={updateTextField}
           onCropChange={updateImageCrop}
           fonts={fonts}
+          textStylePresets={textStylePresets}
+          onSaveTextStylePreset={handleSaveCurrentTextStylePreset}
           onDeleteUploadedFont={handleDeleteUploadedFont}
         />
       </main>

@@ -44,6 +44,7 @@ export type BaseLayer = {
 
 export type TextAlign = 'left' | 'center' | 'right';
 export type TextFontStyle = 'normal' | 'bold' | 'italic' | 'bold italic';
+export type TextBackgroundStyle = 'soft' | 'sharp' | 'frosted' | 'marker';
 
 export type ImageLayer = BaseLayer & {
   type: 'image';
@@ -67,6 +68,7 @@ export type TextLayer = BaseLayer & {
   color: string;
   backgroundEnabled?: boolean;
   backgroundColor?: string;
+  backgroundStyle?: TextBackgroundStyle;
   stylePresetId?: string;
 };
 

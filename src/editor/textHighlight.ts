@@ -1,6 +1,16 @@
-import { TextAlign, TextFontStyle, TextLayer } from './types';
+import { TextAlign, TextBackgroundStyle, TextFontStyle, TextLayer } from './types';
 
 export const DEFAULT_TEXT_BACKGROUND_COLOR = '#fff3e8';
+export const DEFAULT_TEXT_BACKGROUND_STYLE: TextBackgroundStyle = 'soft';
+export const TEXT_BACKGROUND_STYLE_OPTIONS: Array<{
+  id: TextBackgroundStyle;
+  label: string;
+}> = [
+  { id: 'soft', label: 'Soft' },
+  { id: 'sharp', label: 'Sharp' },
+  { id: 'frosted', label: 'Glass' },
+  { id: 'marker', label: 'Marker' },
+];
 
 type HighlightMeasureConfig = {
   fontFamily: string;
@@ -16,6 +26,27 @@ export type TextHighlightRect = {
   height: number;
   cornerRadius: number;
 };
+
+export function withAlpha(color: string, alpha: number) {
+  const normalized = color.trim();
+  const hex = normalized.startsWith('#') ? normalized.slice(1) : normalized;
+  if (![3, 6].includes(hex.length)) {
+    return color;
+  }
+
+  const expanded =
+    hex.length === 3
+      ? hex
+          .split('')
+          .map((char) => `${char}${char}`)
+          .join('')
+      : hex;
+  const red = Number.parseInt(expanded.slice(0, 2), 16);
+  const green = Number.parseInt(expanded.slice(2, 4), 16);
+  const blue = Number.parseInt(expanded.slice(4, 6), 16);
+
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
 
 let measureCanvas: HTMLCanvasElement | null = null;
 let measureContext: CanvasRenderingContext2D | null = null;
@@ -147,6 +178,7 @@ export function buildTextHighlightRects(layer: TextLayer) {
     return [];
   }
 
+  const backgroundStyle = layer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE;
   const contentWidth = Math.max(40, layer.width);
   const measureConfig: HighlightMeasureConfig = {
     fontFamily: layer.fontFamily,
@@ -156,13 +188,22 @@ export function buildTextHighlightRects(layer: TextLayer) {
   };
   const lines = wrapTextToLines(layer.text, contentWidth, measureConfig);
   const lineBoxHeight = layer.fontSize * layer.lineHeight;
-  const horizontalPadding = Math.max(14, layer.fontSize * 0.18);
+  const leadingPadding = Math.max(24, layer.fontSize * 0.3);
+  const trailingPadding = Math.max(14, layer.fontSize * 0.18);
   const verticalPadding = Math.max(6, layer.fontSize * 0.08);
-  const highlightHeight = Math.min(
-    lineBoxHeight,
-    Math.max(layer.fontSize + verticalPadding * 2, 24),
-  );
-  const cornerRadius = Math.max(12, layer.fontSize * 0.2);
+  const highlightHeight =
+    backgroundStyle === 'marker'
+      ? Math.max(24, Math.min(lineBoxHeight * 0.82, layer.fontSize + verticalPadding * 1.7))
+      : Math.min(
+          lineBoxHeight,
+          Math.max(layer.fontSize + verticalPadding * 2, 24),
+        );
+  const cornerRadius =
+    backgroundStyle === 'sharp'
+      ? Math.max(6, layer.fontSize * 0.06)
+      : backgroundStyle === 'marker'
+        ? Math.max(8, layer.fontSize * 0.12)
+        : Math.max(14, layer.fontSize * 0.22);
 
   return lines.reduce<TextHighlightRect[]>((rects, line, index) => {
     const trimmedLine = line.trim();
@@ -172,12 +213,13 @@ export function buildTextHighlightRects(layer: TextLayer) {
 
     const lineWidth = measureTextWidth(trimmedLine, measureConfig);
     const alignedX = getAlignedLineX(contentWidth, lineWidth, layer.align);
-    const rectX = Math.max(0, alignedX - horizontalPadding);
-    const rectWidth = Math.min(
-      contentWidth - rectX,
-      lineWidth + horizontalPadding * 2,
-    );
-    const rectY = index * lineBoxHeight + (lineBoxHeight - highlightHeight) / 2;
+    const rectX = alignedX - leadingPadding;
+    const rectWidth = lineWidth + leadingPadding + trailingPadding;
+    const rectY =
+      index * lineBoxHeight +
+      (backgroundStyle === 'marker'
+        ? lineBoxHeight - highlightHeight - Math.max(2, layer.fontSize * 0.06)
+        : (lineBoxHeight - highlightHeight) / 2);
 
     rects.push({
       x: rectX,
