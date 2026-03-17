@@ -364,6 +364,52 @@ async function dispatchPinchGesture(
   await page.waitForTimeout(120);
 }
 
+async function dispatchSingleTouchDrag(
+  page,
+  { startX, startY, endX, endY, steps = 8 } = {},
+) {
+  const client = await page.context().newCDPSession(page);
+  await client.send('Input.dispatchTouchEvent', {
+    type: 'touchStart',
+    touchPoints: [
+      {
+        x: startX,
+        y: startY,
+        radiusX: 16,
+        radiusY: 16,
+        force: 1,
+        id: 1,
+      },
+    ],
+  });
+
+  for (let step = 1; step <= steps; step += 1) {
+    const progress = step / steps;
+    await client.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [
+        {
+          x: startX + (endX - startX) * progress,
+          y: startY + (endY - startY) * progress,
+          radiusX: 16,
+          radiusY: 16,
+          force: 1,
+          id: 1,
+        },
+      ],
+    });
+    await page.waitForTimeout(16);
+  }
+
+  await client.send('Input.dispatchTouchEvent', {
+    type: 'touchEnd',
+    touchPoints: [],
+  });
+
+  await client.detach();
+  await page.waitForTimeout(160);
+}
+
 async function waitForSavedFontCount(page, expectedCount) {
   await page.waitForFunction(
     async ({ storageKey, storageDbName, storageObjectStore, nextCount }) => {
@@ -433,8 +479,9 @@ async function waitForSavedFontCount(page, expectedCount) {
 }
 
 async function sampleCanvasPixel(page, sample) {
-  return page.evaluate(({ lineText, pointX, pointY }) => {
+  return page.evaluate(({ lineText, pointX, pointY, artboardWidth, artboardHeight }) => {
     const canvas = document.querySelector('.konvajs-content canvas');
+    const stageInner = document.querySelector('.canvas-stage-inner');
     if (!(canvas instanceof HTMLCanvasElement)) {
       return null;
     }
@@ -447,16 +494,32 @@ async function sampleCanvasPixel(page, sample) {
 
     measureContext.font = 'normal 700 84px Arial';
     const lineWidth = measureContext.measureText(lineText).width;
-    const ratio = canvas.width / 1080;
-    const sampleX = Math.round((pointX + lineWidth + 12) * ratio);
-    const sampleY = Math.round(pointY * ratio);
+    const stageWidth =
+      stageInner instanceof HTMLElement
+        ? Number.parseFloat(getComputedStyle(stageInner).width)
+        : artboardWidth;
+    const stageHeight =
+      stageInner instanceof HTMLElement
+        ? Number.parseFloat(getComputedStyle(stageInner).height)
+        : artboardHeight;
+    const offsetX = (stageWidth - artboardWidth) / 2;
+    const offsetY = (stageHeight - artboardHeight) / 2;
+    const ratio = canvas.width / stageWidth;
+    const sampleX = Math.round((offsetX + pointX + lineWidth + 12) * ratio);
+    const sampleY = Math.round((offsetY + pointY) * ratio);
 
     return {
       sampleX,
       sampleY,
       pixel: Array.from(context.getImageData(sampleX, sampleY, 1, 1).data),
     };
-  }, sample);
+  }, {
+    artboardWidth: sample.artboardWidth ?? 1080,
+    artboardHeight: sample.artboardHeight ?? 1920,
+    lineText: sample.lineText,
+    pointX: sample.pointX,
+    pointY: sample.pointY,
+  });
 }
 
 async function sampleStagePixel(page, sample) {
@@ -483,6 +546,34 @@ async function sampleStagePixel(page, sample) {
       pixel: Array.from(context.getImageData(sampleX, sampleY, 1, 1).data),
     };
   }, sample);
+}
+
+async function readArtboardProjection(page, { artboardWidth = 1080, artboardHeight = 1920 } = {}) {
+  return page.evaluate(({ artboardWidth, artboardHeight }) => {
+    const frame = document.querySelector('.canvas-stage-frame');
+    const stageInner = document.querySelector('.canvas-stage-inner');
+    if (!(frame instanceof HTMLElement) || !(stageInner instanceof HTMLElement)) {
+      return null;
+    }
+
+    const frameBounds = frame.getBoundingClientRect();
+    const stageWidth = Number.parseFloat(getComputedStyle(stageInner).width);
+    const stageHeight = Number.parseFloat(getComputedStyle(stageInner).height);
+    const scale = frameBounds.width / stageWidth;
+
+    return {
+      frameX: frameBounds.x,
+      frameY: frameBounds.y,
+      frameWidth: frameBounds.width,
+      frameHeight: frameBounds.height,
+      scale,
+      offsetX: (stageWidth - artboardWidth) / 2,
+      offsetY: (stageHeight - artboardHeight) / 2,
+    };
+  }, {
+    artboardWidth,
+    artboardHeight,
+  });
 }
 
 test('mobile expand turns canvas into near-fullscreen stage', async (t) => {
@@ -563,6 +654,10 @@ test('compact canvas keeps overflow workspace visible around smaller preset', as
     };
 
     return {
+      stageInnerWidth:
+        stageInner instanceof HTMLElement
+          ? Number.parseFloat(getComputedStyle(stageInner).width)
+          : 0,
       stageInnerHeight:
         stageInner instanceof HTMLElement
           ? Number.parseFloat(getComputedStyle(stageInner).height)
@@ -572,7 +667,8 @@ test('compact canvas keeps overflow workspace visible around smaller preset', as
     };
   });
 
-  assert(metrics.stageInnerHeight > 1500);
+  assert(metrics.stageInnerWidth > 1400);
+  assert(metrics.stageInnerHeight >= 1350);
   assert(metrics.frame);
   assert(metrics.toolbar);
   assert(metrics.toolbar.bottom <= metrics.frame.bottom + 1);
@@ -858,26 +954,30 @@ test('text selection toolbar stays attached to frame while dragging', async (t) 
   });
   t.after(async () => context.close());
 
-  const frameBox = await page.locator('.canvas-stage-frame').boundingBox();
+  const projection = await readArtboardProjection(page);
   const toolbar = page.locator('.text-selection-toolbar');
   const toolbarBefore = await toolbar.boundingBox();
-  assert(frameBox);
+  assert(projection);
   assert(toolbarBefore);
 
-  const scale = frameBox.width / 1080;
-  const startX = frameBox.x + (textLayer.x + textLayer.width / 2) * scale;
-  const startY = frameBox.y + (textLayer.y + textLayer.height / 2) * scale;
+  const startX =
+    projection.frameX +
+    (projection.offsetX + textLayer.x + textLayer.width / 2) * projection.scale;
+  const startY =
+    projection.frameY +
+    (projection.offsetY + textLayer.y + textLayer.height / 2) * projection.scale;
 
-  await page.mouse.move(startX, startY);
-  await page.mouse.down();
-  await page.mouse.move(startX + 36, startY + 52, { steps: 8 });
+  await dispatchSingleTouchDrag(page, {
+    startX,
+    startY,
+    endX: startX + 36,
+    endY: startY + 52,
+  });
 
   const toolbarDuring = await toolbar.boundingBox();
   assert(toolbarDuring);
   assert(toolbarDuring.x > toolbarBefore.x + 12);
   assert(toolbarDuring.y > toolbarBefore.y + 12);
-
-  await page.mouse.up();
 });
 
 test('fullscreen text editing opens inline editor and focuses textarea', async (t) => {
@@ -1542,18 +1642,22 @@ test('overlay sticker drags immediately on mobile without drag arming', async (t
   });
   t.after(async () => context.close());
 
-  const frameBox = await page.locator('.canvas-stage-frame').boundingBox();
-  assert(frameBox);
+  const projection = await readArtboardProjection(page);
+  assert(projection);
 
-  const scale = frameBox.width / 1080;
-  const startX = frameBox.x + (imageLayer.x + imageLayer.width / 2) * scale;
-  const startY = frameBox.y + (imageLayer.y + imageLayer.height / 2) * scale;
+  const startX =
+    projection.frameX +
+    (projection.offsetX + imageLayer.x + imageLayer.width / 2) * projection.scale;
+  const startY =
+    projection.frameY +
+    (projection.offsetY + imageLayer.y + imageLayer.height / 2) * projection.scale;
 
-  await page.mouse.move(startX, startY);
-  await page.mouse.down();
-  await page.mouse.move(startX + 42, startY + 54, { steps: 8 });
-  await page.mouse.up();
-  await page.waitForTimeout(150);
+  await dispatchSingleTouchDrag(page, {
+    startX,
+    startY,
+    endX: startX + 42,
+    endY: startY + 54,
+  });
 
   const savedState = await readSavedState(page);
   const movedLayer = savedState.layers.find((layer) => layer.id === imageLayer.id);

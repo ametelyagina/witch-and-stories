@@ -45,56 +45,6 @@ type CanvasWorkspace = {
   offsetY: number;
 };
 
-function getCanvasWorkspace({
-  width,
-  height,
-  layers,
-  includeFields,
-}: {
-  width: number;
-  height: number;
-  layers: Layer[];
-  includeFields: boolean;
-}): CanvasWorkspace {
-  if (!includeFields) {
-    return {
-      viewportWidth: width,
-      viewportHeight: height,
-      offsetX: 0,
-      offsetY: 0,
-    };
-  }
-
-  const fieldPadding = Math.round(Math.min(width, height) * 0.08);
-  let minX = 0;
-  let minY = 0;
-  let maxX = width;
-  let maxY = height;
-
-  const overflowLayers = layers.filter(
-    (layer) => layer.type === 'text' || (layer.type === 'image' && layer.kind === 'overlay'),
-  );
-
-  for (const layer of overflowLayers) {
-    minX = Math.min(minX, layer.x);
-    minY = Math.min(minY, layer.y);
-    maxX = Math.max(maxX, layer.x + layer.width);
-    maxY = Math.max(maxY, layer.y + layer.height);
-  }
-
-  const overflowLeft = Math.max(0, -minX);
-  const overflowTop = Math.max(0, -minY);
-  const overflowRight = Math.max(0, maxX - width);
-  const overflowBottom = Math.max(0, maxY - height);
-
-  return {
-    viewportWidth: width + fieldPadding * 2 + overflowLeft + overflowRight,
-    viewportHeight: height + fieldPadding * 2 + overflowTop + overflowBottom,
-    offsetX: fieldPadding + overflowLeft,
-    offsetY: fieldPadding + overflowTop,
-  };
-}
-
 function App() {
   const [preset, setPreset] = useState<Preset>('story');
   const [layers, setLayers] = useState<Layer[]>([]);
@@ -110,6 +60,7 @@ function App() {
   const [fonts, setFonts] = useState<UploadedFont[]>([DEFAULT_FONT]);
   const [customTextStylePresets, setCustomTextStylePresets] = useState<TextStylePreset[]>([]);
   const [stageScale, setStageScale] = useState(1);
+  const [compactViewportPixels, setCompactViewportPixels] = useState({ width: 0, height: 0 });
   const [fullscreenZoom, setFullscreenZoom] = useState(1);
   const [isHydrated, setIsHydrated] = useState(false);
   const [pendingImage, setPendingImage] = useState<{
@@ -143,14 +94,35 @@ function App() {
     selectedLayerIndex !== -1 && selectedLayerIndex < layers.length - 1;
   const isPhoneViewport = viewport.width <= 720;
   const canvasWorkspace = useMemo(
-    () =>
-      getCanvasWorkspace({
-        width: stageSize.width,
-        height: stageSize.height,
-        layers,
-        includeFields: isPhoneViewport && !isCanvasExpanded,
-      }),
-    [isCanvasExpanded, isPhoneViewport, layers, stageSize.height, stageSize.width],
+    () => {
+      if (isPhoneViewport && !isCanvasExpanded && stageScale > 0) {
+        const viewportWidth = Math.max(stageSize.width, compactViewportPixels.width / stageScale);
+        const viewportHeight = Math.max(stageSize.height, compactViewportPixels.height / stageScale);
+
+        return {
+          viewportWidth,
+          viewportHeight,
+          offsetX: (viewportWidth - stageSize.width) / 2,
+          offsetY: (viewportHeight - stageSize.height) / 2,
+        };
+      }
+
+      return {
+        viewportWidth: stageSize.width,
+        viewportHeight: stageSize.height,
+        offsetX: 0,
+        offsetY: 0,
+      };
+    },
+    [
+      compactViewportPixels.height,
+      compactViewportPixels.width,
+      isCanvasExpanded,
+      isPhoneViewport,
+      stageScale,
+      stageSize.height,
+      stageSize.width,
+    ],
   );
   const effectiveStageScale =
     isPhoneViewport && isCanvasExpanded ? stageScale * fullscreenZoom : stageScale;
@@ -181,26 +153,30 @@ function App() {
       let availableHeight = isStackedWorkbench
         ? stageSize.height
         : Math.max(220, nextViewport.height - wrapperBounds.top - 44);
-      const previewWidth =
-        nextViewport.width <= 720 && !isCanvasExpanded
-          ? canvasWorkspace.viewportWidth
-          : stageSize.width;
-      const previewHeight =
-        nextViewport.width <= 720 && !isCanvasExpanded
-          ? canvasWorkspace.viewportHeight
-          : stageSize.height;
 
       if (nextViewport.width <= 720) {
         if (isCanvasExpanded) {
           availableWidth = Math.max(280, nextViewport.width);
           availableHeight = Math.max(320, nextViewport.height);
+          setCompactViewportPixels((current) =>
+            current.width === 0 && current.height === 0 ? current : { width: 0, height: 0 },
+          );
         } else {
           availableHeight = Math.max(240, Math.min(nextViewport.height * 0.4, 320));
+          setCompactViewportPixels((current) =>
+            current.width === availableWidth && current.height === availableHeight
+              ? current
+              : { width: availableWidth, height: availableHeight },
+          );
         }
+      } else {
+        setCompactViewportPixels((current) =>
+          current.width === 0 && current.height === 0 ? current : { width: 0, height: 0 },
+        );
       }
 
-      const widthScale = availableWidth / previewWidth;
-      const heightScale = availableHeight / previewHeight;
+      const widthScale = availableWidth / stageSize.width;
+      const heightScale = availableHeight / stageSize.height;
       const scale =
         nextViewport.width <= 720 && isCanvasExpanded
           ? Math.min(widthScale, 1)
@@ -212,8 +188,6 @@ function App() {
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
   }, [
-    canvasWorkspace.viewportHeight,
-    canvasWorkspace.viewportWidth,
     isCanvasExpanded,
     stageSize.width,
     stageSize.height,
