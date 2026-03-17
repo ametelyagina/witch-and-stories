@@ -8,8 +8,8 @@ export const TEXT_BACKGROUND_STYLE_OPTIONS: Array<{
 }> = [
   { id: 'soft', label: 'Soft' },
   { id: 'sharp', label: 'Sharp' },
-  { id: 'frosted', label: 'Glass' },
-  { id: 'marker', label: 'Marker' },
+  { id: 'block', label: 'Block' },
+  { id: 'frame', label: 'Frame' },
 ];
 
 type HighlightMeasureConfig = {
@@ -26,6 +26,8 @@ export type TextHighlightRect = {
   height: number;
   cornerRadius: number;
 };
+
+export type TextHighlightBlock = TextHighlightRect;
 
 export function withAlpha(color: string, alpha: number) {
   const normalized = color.trim();
@@ -179,6 +181,7 @@ export function buildTextHighlightRects(layer: TextLayer) {
   }
 
   const backgroundStyle = layer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE;
+  const isBlockStyle = backgroundStyle === 'block' || backgroundStyle === 'frame';
   const contentWidth = Math.max(40, layer.width);
   const measureConfig: HighlightMeasureConfig = {
     fontFamily: layer.fontFamily,
@@ -188,21 +191,20 @@ export function buildTextHighlightRects(layer: TextLayer) {
   };
   const lines = wrapTextToLines(layer.text, contentWidth, measureConfig);
   const lineBoxHeight = layer.fontSize * layer.lineHeight;
-  const leadingPadding = Math.max(24, layer.fontSize * 0.3);
-  const trailingPadding = Math.max(14, layer.fontSize * 0.18);
-  const verticalPadding = Math.max(6, layer.fontSize * 0.08);
-  const highlightHeight =
-    backgroundStyle === 'marker'
-      ? Math.max(24, Math.min(lineBoxHeight * 0.82, layer.fontSize + verticalPadding * 1.7))
-      : Math.min(
-          lineBoxHeight,
-          Math.max(layer.fontSize + verticalPadding * 2, 24),
-        );
+  const leadingPadding = isBlockStyle ? Math.max(28, layer.fontSize * 0.36) : Math.max(24, layer.fontSize * 0.3);
+  const trailingPadding = isBlockStyle ? Math.max(18, layer.fontSize * 0.24) : Math.max(14, layer.fontSize * 0.18);
+  const verticalPadding = isBlockStyle ? Math.max(10, layer.fontSize * 0.14) : Math.max(6, layer.fontSize * 0.08);
+  const highlightHeight = isBlockStyle
+    ? Math.max(layer.fontSize + verticalPadding * 2.1, lineBoxHeight)
+    : Math.min(
+        lineBoxHeight,
+        Math.max(layer.fontSize + verticalPadding * 2, 24),
+      );
   const cornerRadius =
     backgroundStyle === 'sharp'
       ? Math.max(6, layer.fontSize * 0.06)
-      : backgroundStyle === 'marker'
-        ? Math.max(8, layer.fontSize * 0.12)
+      : backgroundStyle === 'frame'
+        ? Math.max(14, layer.fontSize * 0.18)
         : Math.max(14, layer.fontSize * 0.22);
 
   return lines.reduce<TextHighlightRect[]>((rects, line, index) => {
@@ -215,11 +217,7 @@ export function buildTextHighlightRects(layer: TextLayer) {
     const alignedX = getAlignedLineX(contentWidth, lineWidth, layer.align);
     const rectX = alignedX - leadingPadding;
     const rectWidth = lineWidth + leadingPadding + trailingPadding;
-    const rectY =
-      index * lineBoxHeight +
-      (backgroundStyle === 'marker'
-        ? lineBoxHeight - highlightHeight - Math.max(2, layer.fontSize * 0.06)
-        : (lineBoxHeight - highlightHeight) / 2);
+    const rectY = index * lineBoxHeight + (lineBoxHeight - highlightHeight) / 2;
 
     rects.push({
       x: rectX,
@@ -231,4 +229,30 @@ export function buildTextHighlightRects(layer: TextLayer) {
 
     return rects;
   }, []);
+}
+
+export function buildTextHighlightBlock(layer: TextLayer): TextHighlightBlock | null {
+  const rects = buildTextHighlightRects(layer);
+  if (rects.length === 0) {
+    return null;
+  }
+
+  const backgroundStyle = layer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE;
+  const insetX = backgroundStyle === 'frame' ? Math.max(10, layer.fontSize * 0.12) : Math.max(8, layer.fontSize * 0.1);
+  const insetY = backgroundStyle === 'frame' ? Math.max(12, layer.fontSize * 0.16) : Math.max(10, layer.fontSize * 0.12);
+  const minX = Math.min(...rects.map((rect) => rect.x)) - insetX;
+  const minY = Math.min(...rects.map((rect) => rect.y)) - insetY;
+  const maxX = Math.max(...rects.map((rect) => rect.x + rect.width)) + insetX;
+  const maxY = Math.max(...rects.map((rect) => rect.y + rect.height)) + insetY;
+
+  return {
+    x: minX,
+    y: minY,
+    width: maxX - minX,
+    height: maxY - minY,
+    cornerRadius:
+      backgroundStyle === 'frame'
+        ? Math.max(18, layer.fontSize * 0.22)
+        : Math.max(24, layer.fontSize * 0.28),
+  };
 }

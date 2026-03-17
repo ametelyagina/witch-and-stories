@@ -44,7 +44,7 @@ export type BaseLayer = {
 
 export type TextAlign = 'left' | 'center' | 'right';
 export type TextFontStyle = 'normal' | 'bold' | 'italic' | 'bold italic';
-export type TextBackgroundStyle = 'soft' | 'sharp' | 'frosted' | 'marker';
+export type TextBackgroundStyle = 'soft' | 'sharp' | 'block' | 'frame';
 
 export type ImageLayer = BaseLayer & {
   type: 'image';

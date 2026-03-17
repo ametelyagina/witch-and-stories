@@ -1,4 +1,4 @@
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { ChangeEvent, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import Konva from 'konva';
 import { nanoid } from 'nanoid';
 
@@ -107,8 +107,8 @@ function App() {
 
       if (nextViewport.width <= 720) {
         if (isCanvasExpanded) {
-          availableWidth = Math.max(280, nextViewport.width - 6);
-          availableHeight = Math.max(320, nextViewport.height - 6);
+          availableWidth = Math.max(280, nextViewport.width);
+          availableHeight = Math.max(320, nextViewport.height);
         } else {
           availableHeight = Math.max(240, Math.min(nextViewport.height * 0.4, 320));
         }
@@ -118,7 +118,7 @@ function App() {
       const heightScale = availableHeight / stageSize.height;
       const scale =
         nextViewport.width <= 720 && isCanvasExpanded
-          ? Math.max(widthScale, heightScale)
+          ? Math.min(widthScale, 1)
           : Math.min(widthScale, heightScale, 1);
       setStageScale(Math.max(0.15, scale));
     };
@@ -237,13 +237,27 @@ function App() {
     );
   };
 
+  const dismissSelectionUi = () => {
+    setSelectedLayerId(null);
+    setDragArmedImageId(null);
+    setIsTextToolsOpen(false);
+    setEditingTextLayerId(null);
+  };
+
   const handleCanvasMouseDown = (event: Konva.KonvaEventObject<MouseEvent>) => {
     if (event.target === event.target.getStage()) {
-      setSelectedLayerId(null);
-      setDragArmedImageId(null);
-      setIsTextToolsOpen(false);
-      setEditingTextLayerId(null);
+      dismissSelectionUi();
     }
+  };
+
+  const handleWorkbenchPointerDown = (
+    event: ReactPointerEvent<HTMLElement>,
+  ) => {
+    if (isCanvasExpanded || event.target !== event.currentTarget) {
+      return;
+    }
+
+    dismissSelectionUi();
   };
 
   const handleSelectLayer = (id: string) => {
@@ -1043,7 +1057,7 @@ function App() {
         selectedLayerType={selectedLayer?.type ?? null}
       />
 
-      <main className="workbench">
+      <main className="workbench" onPointerDown={handleWorkbenchPointerDown}>
         <ImagePicker
           open={Boolean(pendingImage)}
           image={
@@ -1132,6 +1146,7 @@ function App() {
             onDragEnd={handleDragEnd}
             onTransform={handleTransform}
             onDropFiles={handleCanvasDrop}
+            onDismissWorkspaceUi={dismissSelectionUi}
             transformerRef={transformerRef}
             nodeRefs={nodeRefs}
           />

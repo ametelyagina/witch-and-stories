@@ -81,6 +81,22 @@ const normalizeCrop = (value: unknown): ImageCrop | null => {
   };
 };
 
+const normalizeTextBackgroundStyle = (value: unknown) => {
+  if (value === 'frosted') {
+    return 'block' as const;
+  }
+
+  if (value === 'marker') {
+    return 'frame' as const;
+  }
+
+  if (value === 'soft' || value === 'sharp' || value === 'block' || value === 'frame') {
+    return value;
+  }
+
+  return null;
+};
+
 const normalizeTextStylePreset = (value: unknown): TextStylePreset | null => {
   if (!value || typeof value !== 'object') {
     return null;
@@ -122,10 +138,7 @@ const normalizeTextStylePreset = (value: unknown): TextStylePreset | null => {
     typeof preset.color !== 'string' ||
     typeof preset.backgroundEnabled !== 'boolean' ||
     typeof preset.backgroundColor !== 'string' ||
-    (preset.backgroundStyle !== 'soft' &&
-      preset.backgroundStyle !== 'sharp' &&
-      preset.backgroundStyle !== 'frosted' &&
-      preset.backgroundStyle !== 'marker')
+    normalizeTextBackgroundStyle(preset.backgroundStyle) === null
   ) {
     return null;
   }
@@ -145,7 +158,7 @@ const normalizeTextStylePreset = (value: unknown): TextStylePreset | null => {
     color: preset.color,
     backgroundEnabled: preset.backgroundEnabled,
     backgroundColor: preset.backgroundColor,
-    backgroundStyle: preset.backgroundStyle,
+    backgroundStyle: normalizeTextBackgroundStyle(preset.backgroundStyle) ?? DEFAULT_TEXT_BACKGROUND_STYLE,
   };
 };
 
@@ -206,10 +219,7 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
       (textLayer.backgroundEnabled !== undefined && typeof textLayer.backgroundEnabled !== 'boolean') ||
       (textLayer.backgroundColor !== undefined && typeof textLayer.backgroundColor !== 'string') ||
       (textLayer.backgroundStyle !== undefined &&
-        textLayer.backgroundStyle !== 'soft' &&
-        textLayer.backgroundStyle !== 'sharp' &&
-        textLayer.backgroundStyle !== 'frosted' &&
-        textLayer.backgroundStyle !== 'marker') ||
+        normalizeTextBackgroundStyle(textLayer.backgroundStyle) === null) ||
       (textLayer.stylePresetId !== undefined && typeof textLayer.stylePresetId !== 'string')
     ) {
       return null;
@@ -233,7 +243,8 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
       color: textLayer.color,
       backgroundEnabled: textLayer.backgroundEnabled ?? false,
       backgroundColor: textLayer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
-      backgroundStyle: textLayer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE,
+      backgroundStyle:
+        normalizeTextBackgroundStyle(textLayer.backgroundStyle) ?? DEFAULT_TEXT_BACKGROUND_STYLE,
       stylePresetId: textLayer.stylePresetId,
     };
   }

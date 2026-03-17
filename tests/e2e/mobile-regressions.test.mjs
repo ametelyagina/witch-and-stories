@@ -386,6 +386,8 @@ test('mobile expand turns canvas into near-fullscreen stage', async (t) => {
 
       const bounds = element.getBoundingClientRect();
       return {
+        left: bounds.left,
+        right: bounds.right,
         width: bounds.width,
         height: bounds.height,
       };
@@ -393,6 +395,8 @@ test('mobile expand turns canvas into near-fullscreen stage', async (t) => {
 
     return {
       isExpanded: Boolean(column),
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
       frame: rect(frame),
       hasHint: Boolean(hint),
       scrollHeight: document.documentElement.scrollHeight,
@@ -400,10 +404,68 @@ test('mobile expand turns canvas into near-fullscreen stage', async (t) => {
   });
 
   assert.equal(metrics.isExpanded, true);
-  assert(metrics.frame.width >= 385);
-  assert(metrics.frame.height >= 830);
+  assert(Math.abs(metrics.frame.width - metrics.viewportWidth) <= 1.5);
+  assert(metrics.frame.left >= -1);
+  assert(metrics.frame.right <= metrics.viewportWidth + 1);
+  assert(metrics.frame.height <= metrics.viewportHeight);
   assert.equal(metrics.hasHint, false);
   assert(metrics.scrollHeight <= MOBILE_VIEWPORT.height);
+});
+
+test('tap on empty canvas background clears selection and closes text tools', async (t) => {
+  const textLayer = buildTextLayer({
+    text: 'Сними выделение',
+  });
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      selectedLayerId: textLayer.id,
+      layers: [textLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  await page.getByRole('button', { name: /быстрые настройки текста/i }).click();
+
+  const clickPosition = await page.evaluate(() => {
+    const shell = document.querySelector('.canvas-shell');
+    const frame = document.querySelector('.canvas-stage-frame');
+    if (!(shell instanceof HTMLElement) || !(frame instanceof HTMLElement)) {
+      return null;
+    }
+
+    const shellRect = shell.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
+    const leftGap = frameRect.left - shellRect.left;
+    const rightGap = shellRect.right - frameRect.right;
+
+    return {
+      x:
+        leftGap > rightGap
+          ? Math.max(8, leftGap / 2)
+          : Math.min(shellRect.width - 8, frameRect.right - shellRect.left + rightGap / 2),
+      y: Math.min(shellRect.height - 8, Math.max(12, frameRect.top - shellRect.top + 18)),
+    };
+  });
+
+  assert.ok(clickPosition);
+
+  await page.locator('.canvas-shell').click({
+    position: clickPosition,
+  });
+
+  await page.waitForFunction((storageKey) => {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) {
+      return false;
+    }
+
+    const state = JSON.parse(raw);
+    return state.selectedLayerId === null;
+  }, STORAGE_KEY);
+
+  await page.locator('.text-selection-popover').waitFor({ state: 'hidden' });
+  const savedState = await readSavedState(page);
+  assert.equal(savedState.selectedLayerId, null);
 });
 
 test('fullscreen text editing opens inline editor and focuses textarea', async (t) => {
@@ -483,7 +545,7 @@ test('text highlight toggle persists and paints canvas', async (t) => {
 
 test('text highlight style persists from quick text tools', async (t) => {
   const textLayer = buildTextLayer({
-    text: 'Glass test',
+    text: 'Block test',
   });
   const { context, page } = await openMobilePage({
     state: buildState({
@@ -497,7 +559,7 @@ test('text highlight style persists from quick text tools', async (t) => {
   await page.locator('.text-selection-highlight-button').click();
   await page
     .locator('.text-selection-popover')
-    .getByRole('button', { name: 'Glass' })
+    .getByRole('button', { name: 'Block' })
     .click();
 
   await page.waitForFunction((storageKey) => {
@@ -507,12 +569,12 @@ test('text highlight style persists from quick text tools', async (t) => {
     }
 
     const state = JSON.parse(raw);
-    return state.layers?.[0]?.backgroundStyle === 'frosted';
+    return state.layers?.[0]?.backgroundStyle === 'block';
   }, STORAGE_KEY);
 
   const savedState = await readSavedState(page);
   assert.equal(savedState.layers[0].backgroundEnabled, true);
-  assert.equal(savedState.layers[0].backgroundStyle, 'frosted');
+  assert.equal(savedState.layers[0].backgroundStyle, 'block');
 });
 
 test('saved text style appears in presets and survives reload', async (t) => {
@@ -526,7 +588,7 @@ test('saved text style appears in presets and survives reload', async (t) => {
     color: '#d9683c',
     backgroundEnabled: true,
     backgroundColor: '#f6d6c7',
-    backgroundStyle: 'marker',
+    backgroundStyle: 'frame',
   });
   const { context, page } = await openMobilePage({
     state: buildState({
@@ -558,7 +620,7 @@ test('saved text style appears in presets and survives reload', async (t) => {
   assert.equal(savedState.textStylePresets[0].lineHeight, 1.45);
   assert.equal(savedState.textStylePresets[0].align, 'center');
   assert.equal(savedState.textStylePresets[0].backgroundEnabled, true);
-  assert.equal(savedState.textStylePresets[0].backgroundStyle, 'marker');
+  assert.equal(savedState.textStylePresets[0].backgroundStyle, 'frame');
 
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByRole('tab', { name: 'Пресет' }).click();
