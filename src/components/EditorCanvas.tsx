@@ -123,6 +123,10 @@ type EditorCanvasProps = {
   onInlineTextChange: (id: string, value: string) => void;
   onDragEnd: (id: string, event: Konva.KonvaEventObject<DragEvent>) => void;
   onTransform: (id: string, event: Konva.KonvaEventObject<Event>) => void;
+  onRestoreLayerGeometry: (
+    id: string,
+    geometry: Pick<Layer, 'x' | 'y' | 'width' | 'height' | 'rotation'>,
+  ) => void;
   onDismissWorkspaceUi: () => void;
   transformerRef: RefObject<Konva.Transformer | null>;
   nodeRefs: MutableRefObject<Record<string, Konva.Node>>;
@@ -169,6 +173,7 @@ export function EditorCanvas({
   onInlineTextChange,
   onDragEnd,
   onTransform,
+  onRestoreLayerGeometry,
   onDismissWorkspaceUi,
   transformerRef,
   nodeRefs,
@@ -181,6 +186,11 @@ export function EditorCanvas({
   const longPressTriggeredRef = useRef(false);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
   const touchPointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const multiTouchFreezeRef = useRef(false);
+  const cancelledInteractionLayerIdsRef = useRef<Set<string>>(new Set());
+  const interactionOriginRef = useRef<
+    Record<string, Pick<Layer, 'x' | 'y' | 'width' | 'height' | 'rotation'>>
+  >({});
   const pinchActionLockRef = useRef<'expand' | 'collapse' | null>(null);
   const pinchGestureRef = useRef<{
     mode: 'compact' | 'fullscreen';
@@ -306,9 +316,63 @@ export function EditorCanvas({
   };
 
   const isTwoFingerGestureActive = () =>
+    multiTouchFreezeRef.current ||
     touchPointersRef.current.size >= 2 ||
     Boolean(pinchGestureRef.current) ||
     Boolean(touchPinchGestureRef.current);
+
+  const rememberLayerInteractionOrigin = (layer: Layer) => {
+    interactionOriginRef.current[layer.id] = {
+      x: layer.x,
+      y: layer.y,
+      width: layer.width,
+      height: layer.height,
+      rotation: layer.rotation,
+    };
+  };
+
+  const clearLayerInteractionOrigin = (layerId: string) => {
+    delete interactionOriginRef.current[layerId];
+  };
+
+  const restoreLayerNodeGeometry = (layer: Layer | null) => {
+    if (!layer) {
+      return;
+    }
+
+    const node = nodeRefs.current[layer.id];
+    if (!(node instanceof Konva.Node)) {
+      return;
+    }
+
+    node.position({
+      x: layer.x,
+      y: layer.y,
+    });
+    node.rotation(layer.rotation);
+    node.scaleX(1);
+    node.scaleY(1);
+    node.getLayer()?.batchDraw();
+  };
+
+  const restoreLayerInteraction = (layer: Layer | null) => {
+    if (!layer) {
+      return;
+    }
+
+    const origin = interactionOriginRef.current[layer.id];
+    const restoredLayer = origin ? ({ ...layer, ...origin } as Layer) : layer;
+
+    onRestoreLayerGeometry(layer.id, {
+      x: restoredLayer.x,
+      y: restoredLayer.y,
+      width: restoredLayer.width,
+      height: restoredLayer.height,
+      rotation: restoredLayer.rotation,
+    });
+    restoreLayerNodeGeometry(restoredLayer);
+    syncSelectionMetrics(restoredLayer);
+  };
 
   const stopSelectedLayerManipulation = () => {
     transformerRef.current?.stopTransform();
@@ -321,12 +385,18 @@ export function EditorCanvas({
     if (node instanceof Konva.Node && node.isDragging()) {
       node.stopDrag();
     }
+
+    cancelledInteractionLayerIdsRef.current.add(selectedCanvasLayer.id);
+    restoreLayerInteraction(selectedCanvasLayer);
   };
 
   useEffect(() => {
     return () => {
       clearLongPressTimer();
       touchPointersRef.current.clear();
+      multiTouchFreezeRef.current = false;
+      cancelledInteractionLayerIdsRef.current.clear();
+      interactionOriginRef.current = {};
       pinchGestureRef.current = null;
       touchPinchGestureRef.current = null;
       pinchActionLockRef.current = null;
@@ -350,6 +420,8 @@ export function EditorCanvas({
     }
 
     if (touchPointersRef.current.size >= 2) {
+      multiTouchFreezeRef.current = true;
+      event.preventDefault();
       cancelLongPress();
       stopSelectedLayerManipulation();
 
@@ -400,6 +472,7 @@ export function EditorCanvas({
 
     const pinchGesture = pinchGestureRef.current;
     if (event.pointerType === 'touch' && pinchGesture && touchPointersRef.current.size >= 2) {
+      event.preventDefault();
       cancelLongPress();
       stopSelectedLayerManipulation();
 
@@ -449,6 +522,7 @@ export function EditorCanvas({
       }
 
       if (touchPointersRef.current.size === 0) {
+        multiTouchFreezeRef.current = false;
         pinchActionLockRef.current = null;
       }
 
@@ -468,6 +542,7 @@ export function EditorCanvas({
     }
 
     event.preventDefault();
+    multiTouchFreezeRef.current = true;
     cancelLongPress();
     stopSelectedLayerManipulation();
 
@@ -539,8 +614,11 @@ export function EditorCanvas({
 
       touchPinchGestureRef.current = null;
       if (event.touches.length === 0) {
+        multiTouchFreezeRef.current = false;
         pinchActionLockRef.current = null;
       }
+    } else if (event.touches.length === 0) {
+      multiTouchFreezeRef.current = false;
     }
   };
 
@@ -738,11 +816,15 @@ export function EditorCanvas({
         }
 
         if (layer.kind === 'overlay') {
+          rememberLayerInteractionOrigin(layer);
+          cancelledInteractionLayerIdsRef.current.delete(layer.id);
           onSelectLayer(layer.id);
           syncSelectionMetrics(layer);
           return;
         }
 
+        rememberLayerInteractionOrigin(layer);
+        cancelledInteractionLayerIdsRef.current.delete(layer.id);
         if (dragArmedImageId === layer.id) {
           return;
         }
@@ -764,8 +846,25 @@ export function EditorCanvas({
         syncSelectionMetrics(layer);
       }}
       onDragEnd={(event) => {
+        if (cancelledInteractionLayerIdsRef.current.has(layer.id)) {
+          cancelledInteractionLayerIdsRef.current.delete(layer.id);
+          restoreLayerInteraction(layer);
+          clearLayerInteractionOrigin(layer.id);
+          return;
+        }
+
         syncSelectionMetrics(layer);
         onDragEnd(layer.id, event);
+        clearLayerInteractionOrigin(layer.id);
+      }}
+      onTransformStart={() => {
+        if (!isTwoFingerGestureActive()) {
+          rememberLayerInteractionOrigin(layer);
+          cancelledInteractionLayerIdsRef.current.delete(layer.id);
+          return;
+        }
+
+        stopSelectedLayerManipulation();
       }}
       onTransform={() => {
         if (isTwoFingerGestureActive()) {
@@ -776,8 +875,16 @@ export function EditorCanvas({
         syncSelectionMetrics(layer);
       }}
       onTransformEnd={(event) => {
+        if (cancelledInteractionLayerIdsRef.current.has(layer.id)) {
+          cancelledInteractionLayerIdsRef.current.delete(layer.id);
+          restoreLayerInteraction(layer);
+          clearLayerInteractionOrigin(layer.id);
+          return;
+        }
+
         syncSelectionMetrics(layer);
         onTransform(layer.id, event);
+        clearLayerInteractionOrigin(layer.id);
       }}
       ref={(node) => {
         if (node) {
@@ -800,7 +907,11 @@ export function EditorCanvas({
       onTransformStart={() => {
         if (isTwoFingerGestureActive()) {
           stopSelectedLayerManipulation();
+          return;
         }
+
+        rememberLayerInteractionOrigin(layer);
+        cancelledInteractionLayerIdsRef.current.delete(layer.id);
       }}
       onTransform={(event) => {
         if (isTwoFingerGestureActive()) {
@@ -823,6 +934,8 @@ export function EditorCanvas({
       onDblTap={() => openInlineEditor(layer.id)}
       onDragStart={(event) => {
         if (!isTwoFingerGestureActive()) {
+          rememberLayerInteractionOrigin(layer);
+          cancelledInteractionLayerIdsRef.current.delete(layer.id);
           return;
         }
 
@@ -841,12 +954,28 @@ export function EditorCanvas({
         syncSelectionMetrics(layer);
       }}
       onDragEnd={(event) => {
+        if (cancelledInteractionLayerIdsRef.current.has(layer.id)) {
+          cancelledInteractionLayerIdsRef.current.delete(layer.id);
+          restoreLayerInteraction(layer);
+          clearLayerInteractionOrigin(layer.id);
+          return;
+        }
+
         syncSelectionMetrics(layer);
         onDragEnd(layer.id, event);
+        clearLayerInteractionOrigin(layer.id);
       }}
       onTransformEnd={(event) => {
+        if (cancelledInteractionLayerIdsRef.current.has(layer.id)) {
+          cancelledInteractionLayerIdsRef.current.delete(layer.id);
+          restoreLayerInteraction(layer);
+          clearLayerInteractionOrigin(layer.id);
+          return;
+        }
+
         syncSelectionMetrics(layer);
         onTransform(layer.id, event);
+        clearLayerInteractionOrigin(layer.id);
       }}
       ref={(node) => {
         if (node) {

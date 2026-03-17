@@ -791,6 +791,13 @@ function App() {
     }
   };
 
+  const handleRestoreLayerGeometry = (
+    id: string,
+    geometry: Pick<Layer, 'x' | 'y' | 'width' | 'height' | 'rotation'>,
+  ) => {
+    updateLayer(id, geometry);
+  };
+
   const handleExport = async () => {
     const stage = stageRef.current;
     if (!stage) return;
@@ -1290,6 +1297,7 @@ function App() {
             onInlineTextChange={updateTextField}
             onDragEnd={handleDragEnd}
             onTransform={handleTransform}
+            onRestoreLayerGeometry={handleRestoreLayerGeometry}
             onDropFiles={handleCanvasDrop}
             onDismissWorkspaceUi={dismissSelectionUi}
             transformerRef={transformerRef}
