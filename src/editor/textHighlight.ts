@@ -8,8 +8,10 @@ export const TEXT_BACKGROUND_STYLE_OPTIONS: Array<{
 }> = [
   { id: 'soft', label: 'Soft' },
   { id: 'sharp', label: 'Sharp' },
+  { id: 'cloud', label: 'Cloud' },
   { id: 'block', label: 'Block' },
   { id: 'frame', label: 'Frame' },
+  { id: 'sticker', label: 'Sticker' },
 ];
 
 type HighlightMeasureConfig = {
@@ -182,6 +184,8 @@ export function buildTextHighlightRects(layer: TextLayer) {
 
   const backgroundStyle = layer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE;
   const isBlockStyle = backgroundStyle === 'block' || backgroundStyle === 'frame';
+  const isCloudStyle = backgroundStyle === 'cloud';
+  const isStickerStyle = backgroundStyle === 'sticker';
   const contentWidth = Math.max(40, layer.width);
   const measureConfig: HighlightMeasureConfig = {
     fontFamily: layer.fontFamily,
@@ -191,20 +195,46 @@ export function buildTextHighlightRects(layer: TextLayer) {
   };
   const lines = wrapTextToLines(layer.text, contentWidth, measureConfig);
   const lineBoxHeight = layer.fontSize * layer.lineHeight;
-  const leadingPadding = isBlockStyle ? Math.max(28, layer.fontSize * 0.36) : Math.max(24, layer.fontSize * 0.3);
-  const trailingPadding = isBlockStyle ? Math.max(18, layer.fontSize * 0.24) : Math.max(14, layer.fontSize * 0.18);
-  const verticalPadding = isBlockStyle ? Math.max(10, layer.fontSize * 0.14) : Math.max(6, layer.fontSize * 0.08);
+  const leadingPadding = isBlockStyle
+    ? Math.max(28, layer.fontSize * 0.36)
+    : isCloudStyle
+      ? Math.max(30, layer.fontSize * 0.4)
+      : isStickerStyle
+        ? Math.max(26, layer.fontSize * 0.34)
+        : Math.max(24, layer.fontSize * 0.3);
+  const trailingPadding = isBlockStyle
+    ? Math.max(18, layer.fontSize * 0.24)
+    : isCloudStyle
+      ? Math.max(20, layer.fontSize * 0.28)
+      : isStickerStyle
+        ? Math.max(18, layer.fontSize * 0.24)
+        : Math.max(14, layer.fontSize * 0.18);
+  const verticalPadding = isBlockStyle
+    ? Math.max(10, layer.fontSize * 0.14)
+    : isCloudStyle
+      ? Math.max(9, layer.fontSize * 0.13)
+      : isStickerStyle
+        ? Math.max(8, layer.fontSize * 0.11)
+        : Math.max(6, layer.fontSize * 0.08);
   const highlightHeight = isBlockStyle
     ? Math.max(layer.fontSize + verticalPadding * 2.1, lineBoxHeight)
-    : Math.min(
-        lineBoxHeight,
-        Math.max(layer.fontSize + verticalPadding * 2, 24),
-      );
+    : isCloudStyle
+      ? Math.max(layer.fontSize + verticalPadding * 2.5, lineBoxHeight)
+      : isStickerStyle
+        ? Math.max(layer.fontSize + verticalPadding * 2.2, lineBoxHeight * 0.96)
+        : Math.min(
+            lineBoxHeight,
+            Math.max(layer.fontSize + verticalPadding * 2, 24),
+          );
   const cornerRadius =
     backgroundStyle === 'sharp'
       ? Math.max(6, layer.fontSize * 0.06)
+      : backgroundStyle === 'cloud'
+        ? Math.max(22, layer.fontSize * 0.32)
       : backgroundStyle === 'frame'
         ? Math.max(14, layer.fontSize * 0.18)
+        : backgroundStyle === 'sticker'
+          ? Math.max(18, layer.fontSize * 0.24)
         : Math.max(14, layer.fontSize * 0.22);
 
   return lines.reduce<TextHighlightRect[]>((rects, line, index) => {

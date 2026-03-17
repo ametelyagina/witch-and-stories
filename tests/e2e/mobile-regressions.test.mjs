@@ -468,6 +468,101 @@ test('tap on empty canvas background clears selection and closes text tools', as
   assert.equal(savedState.selectedLayerId, null);
 });
 
+test('tap on fullscreen black bars clears selection and closes text tools', async (t) => {
+  const textLayer = buildTextLayer({
+    text: 'Сними выделение fullscreen',
+  });
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      selectedLayerId: textLayer.id,
+      layers: [textLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  await page.getByRole('button', { name: /развернуть/i }).click();
+  await page.getByRole('button', { name: /быстрые настройки текста/i }).click();
+
+  const clickPosition = await page.evaluate(() => {
+    const shell = document.querySelector('.canvas-shell');
+    const frame = document.querySelector('.canvas-stage-frame');
+    if (!(shell instanceof HTMLElement) || !(frame instanceof HTMLElement)) {
+      return null;
+    }
+
+    const shellRect = shell.getBoundingClientRect();
+    const frameRect = frame.getBoundingClientRect();
+    const topGap = frameRect.top - shellRect.top;
+    const bottomGap = shellRect.bottom - frameRect.bottom;
+
+    if (topGap < 8 && bottomGap < 8) {
+      return null;
+    }
+
+    return {
+      x: shellRect.width / 2,
+      y:
+        topGap >= bottomGap
+          ? Math.max(8, topGap / 2)
+          : Math.min(shellRect.height - 8, frameRect.bottom - shellRect.top + bottomGap / 2),
+    };
+  });
+
+  assert.ok(clickPosition);
+
+  await page.locator('.canvas-shell').click({
+    position: clickPosition,
+  });
+
+  await page.waitForFunction((storageKey) => {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) {
+      return false;
+    }
+
+    const state = JSON.parse(raw);
+    return state.selectedLayerId === null;
+  }, STORAGE_KEY);
+
+  await page.locator('.text-selection-popover').waitFor({ state: 'hidden' });
+  const savedState = await readSavedState(page);
+  assert.equal(savedState.selectedLayerId, null);
+});
+
+test('text selection toolbar stays attached to frame while dragging', async (t) => {
+  const textLayer = buildTextLayer({
+    text: 'Тяни меня',
+  });
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      selectedLayerId: textLayer.id,
+      layers: [textLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  const frameBox = await page.locator('.canvas-stage-frame').boundingBox();
+  const toolbar = page.locator('.text-selection-toolbar');
+  const toolbarBefore = await toolbar.boundingBox();
+  assert(frameBox);
+  assert(toolbarBefore);
+
+  const scale = frameBox.width / 1080;
+  const startX = frameBox.x + (textLayer.x + textLayer.width / 2) * scale;
+  const startY = frameBox.y + (textLayer.y + textLayer.height / 2) * scale;
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 36, startY + 52, { steps: 8 });
+
+  const toolbarDuring = await toolbar.boundingBox();
+  assert(toolbarDuring);
+  assert(toolbarDuring.x > toolbarBefore.x + 12);
+  assert(toolbarDuring.y > toolbarBefore.y + 12);
+
+  await page.mouse.up();
+});
+
 test('fullscreen text editing opens inline editor and focuses textarea', async (t) => {
   const textLayer = buildTextLayer();
   const { context, page } = await openMobilePage({
@@ -484,6 +579,7 @@ test('fullscreen text editing opens inline editor and focuses textarea', async (
 
   const editor = page.locator('.text-inline-editor-input');
   await editor.waitFor({ state: 'visible' });
+  await page.waitForFunction(() => document.activeElement?.tagName === 'TEXTAREA');
 
   const focusState = await page.evaluate(() => ({
     activeTag: document.activeElement?.tagName ?? null,
@@ -545,7 +641,7 @@ test('text highlight toggle persists and paints canvas', async (t) => {
 
 test('text highlight style persists from quick text tools', async (t) => {
   const textLayer = buildTextLayer({
-    text: 'Block test',
+    text: 'Cloud test',
   });
   const { context, page } = await openMobilePage({
     state: buildState({
@@ -559,7 +655,7 @@ test('text highlight style persists from quick text tools', async (t) => {
   await page.locator('.text-selection-highlight-button').click();
   await page
     .locator('.text-selection-popover')
-    .getByRole('button', { name: 'Block' })
+    .getByRole('button', { name: 'Cloud' })
     .click();
 
   await page.waitForFunction((storageKey) => {
@@ -569,12 +665,12 @@ test('text highlight style persists from quick text tools', async (t) => {
     }
 
     const state = JSON.parse(raw);
-    return state.layers?.[0]?.backgroundStyle === 'block';
+    return state.layers?.[0]?.backgroundStyle === 'cloud';
   }, STORAGE_KEY);
 
   const savedState = await readSavedState(page);
   assert.equal(savedState.layers[0].backgroundEnabled, true);
-  assert.equal(savedState.layers[0].backgroundStyle, 'block');
+  assert.equal(savedState.layers[0].backgroundStyle, 'cloud');
 });
 
 test('saved text style appears in presets and survives reload', async (t) => {
@@ -588,7 +684,7 @@ test('saved text style appears in presets and survives reload', async (t) => {
     color: '#d9683c',
     backgroundEnabled: true,
     backgroundColor: '#f6d6c7',
-    backgroundStyle: 'frame',
+    backgroundStyle: 'sticker',
   });
   const { context, page } = await openMobilePage({
     state: buildState({
@@ -620,7 +716,7 @@ test('saved text style appears in presets and survives reload', async (t) => {
   assert.equal(savedState.textStylePresets[0].lineHeight, 1.45);
   assert.equal(savedState.textStylePresets[0].align, 'center');
   assert.equal(savedState.textStylePresets[0].backgroundEnabled, true);
-  assert.equal(savedState.textStylePresets[0].backgroundStyle, 'frame');
+  assert.equal(savedState.textStylePresets[0].backgroundStyle, 'sticker');
 
   await page.reload({ waitUntil: 'networkidle' });
   await page.getByRole('tab', { name: 'Пресет' }).click();
@@ -1068,6 +1164,55 @@ test('background survives reload and clipboard sticker paste', async (t) => {
 
   assert.equal(savedState.layers.length, 2);
   assert.deepEqual(kinds, ['background', 'overlay']);
+});
+
+test('selection toolbar can move image layer to top and bottom of stack', async (t) => {
+  const imageLayer = buildImageLayer();
+  const textLayer = buildTextLayer({
+    id: 'text-2',
+    text: 'Над картинкой',
+  });
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      selectedLayerId: imageLayer.id,
+      layers: [imageLayer, textLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  await page.locator('.text-selection-toolbar').waitFor({ state: 'visible' });
+
+  await page.getByRole('button', { name: /перенести слой в самый верх/i }).click();
+  await page.waitForFunction(({ storageKey, selectedId }) => {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) {
+      return false;
+    }
+
+    const state = JSON.parse(raw);
+    return (
+      state.selectedLayerId === selectedId &&
+      state.layers?.[state.layers.length - 1]?.id === selectedId
+    );
+  }, { storageKey: STORAGE_KEY, selectedId: imageLayer.id });
+
+  let savedState = await readSavedState(page);
+  assert.deepEqual(savedState.layers.map((layer) => layer.id), [textLayer.id, imageLayer.id]);
+  assert.equal(savedState.selectedLayerId, imageLayer.id);
+
+  await page.getByRole('button', { name: /перенести слой в самый низ/i }).click();
+  await page.waitForFunction(({ storageKey, selectedId }) => {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) {
+      return false;
+    }
+
+    const state = JSON.parse(raw);
+    return state.layers?.[0]?.id === selectedId;
+  }, { storageKey: STORAGE_KEY, selectedId: imageLayer.id });
+
+  savedState = await readSavedState(page);
+  assert.deepEqual(savedState.layers.map((layer) => layer.id), [imageLayer.id, textLayer.id]);
 });
 
 test('overlay sticker drags immediately on mobile without drag arming', async (t) => {

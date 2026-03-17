@@ -1,4 +1,4 @@
-import { CSSProperties, PointerEvent as ReactPointerEvent, useEffect, useRef } from 'react';
+import { CSSProperties, PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 
 import { FontPicker } from './FontPicker';
@@ -38,6 +38,33 @@ function clampToFrame(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+type SelectionMetrics = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
+
+function areSelectionMetricsEqual(
+  left: SelectionMetrics | null,
+  right: SelectionMetrics | null,
+) {
+  if (!left || !right) {
+    return left === right;
+  }
+
+  return (
+    Math.abs(left.left - right.left) < 0.5 &&
+    Math.abs(left.top - right.top) < 0.5 &&
+    Math.abs(left.right - right.right) < 0.5 &&
+    Math.abs(left.bottom - right.bottom) < 0.5 &&
+    Math.abs(left.width - right.width) < 0.5 &&
+    Math.abs(left.height - right.height) < 0.5
+  );
+}
+
 type EditorCanvasProps = {
   stageRef: RefObject<Konva.Stage | null>;
   containerRef: RefObject<HTMLDivElement | null>;
@@ -68,6 +95,9 @@ type EditorCanvasProps = {
     backgroundColor?: string;
     backgroundStyle?: TextBackgroundStyle;
   }) => void;
+  onMoveSelectedLayerToEdge: (edge: 'back' | 'front') => void;
+  canSendSelectedLayerToBack: boolean;
+  canBringSelectedLayerToFront: boolean;
   onDeleteUploadedFont: (fontId: string) => void;
   onDeleteSelected: () => void;
   onRequestSavePreview: () => void;
@@ -103,6 +133,9 @@ export function EditorCanvas({
   onArmImageDrag,
   onToggleTextTools,
   onQuickTextStyleChange,
+  onMoveSelectedLayerToEdge,
+  canSendSelectedLayerToBack,
+  canBringSelectedLayerToFront,
   onDeleteUploadedFont,
   onDeleteSelected,
   onRequestSavePreview,
@@ -124,6 +157,48 @@ export function EditorCanvas({
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const selectedCanvasLayer = selectedLayer;
+  const selectedTextLayer = isTextLayer(selectedLayer) ? selectedLayer : null;
+  const [selectionMetrics, setSelectionMetrics] = useState<SelectionMetrics | null>(null);
+
+  const readSelectionMetrics = (layer: Layer | null) => {
+    if (!layer) {
+      return null;
+    }
+
+    const node = nodeRefs.current[layer.id];
+    if (node) {
+      const rect = node.getClientRect({
+        skipShadow: true,
+        skipStroke: true,
+      });
+
+      return {
+        left: rect.x * scale,
+        top: rect.y * scale,
+        right: (rect.x + rect.width) * scale,
+        bottom: (rect.y + rect.height) * scale,
+        width: rect.width * scale,
+        height: rect.height * scale,
+      };
+    }
+
+    return {
+      left: layer.x * scale,
+      top: layer.y * scale,
+      right: (layer.x + layer.width) * scale,
+      bottom: (layer.y + layer.height) * scale,
+      width: layer.width * scale,
+      height: layer.height * scale,
+    };
+  };
+
+  const syncSelectionMetrics = (layer: Layer | null = selectedCanvasLayer) => {
+    const nextMetrics = readSelectionMetrics(layer);
+    setSelectionMetrics((current) =>
+      areSelectionMetricsEqual(current, nextMetrics) ? current : nextMetrics,
+    );
+  };
 
   const focusInlineEditor = () => {
     const textarea = textEditorRef.current;
@@ -213,10 +288,6 @@ export function EditorCanvas({
   };
 
   const handleShellPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
-    if (isFullscreenCanvas) {
-      return;
-    }
-
     const target = event.target;
     if (!(target instanceof HTMLElement)) {
       return;
@@ -234,12 +305,29 @@ export function EditorCanvas({
     onDismissWorkspaceUi();
   };
 
-  const selectedTextLayer = isTextLayer(selectedLayer) ? selectedLayer : null;
   const isEditingSelectedText = Boolean(
     selectedTextLayer && editingTextLayerId === selectedTextLayer.id,
   );
   const frameWidth = Math.round(width * scale);
   const frameHeight = Math.round(height * scale);
+
+  useEffect(() => {
+    if (!selectedCanvasLayer) {
+      setSelectionMetrics(null);
+      return;
+    }
+
+    syncSelectionMetrics(selectedCanvasLayer);
+  }, [
+    scale,
+    selectedCanvasLayer,
+    selectedCanvasLayer?.height,
+    selectedCanvasLayer?.id,
+    selectedCanvasLayer?.rotation,
+    selectedCanvasLayer?.width,
+    selectedCanvasLayer?.x,
+    selectedCanvasLayer?.y,
+  ]);
 
   useEffect(() => {
     if (!isEditingSelectedText || !textEditorRef.current) {
@@ -258,66 +346,73 @@ export function EditorCanvas({
   let inlineEditorStyle: CSSProperties | undefined;
   const estimatedPopoverHeight = 520;
 
-  if (selectedTextLayer) {
-    const toolbarWidth = 72;
-    const popoverWidth = Math.min(228, frameWidth - 12);
-    const selectionTop = selectedTextLayer.y * scale;
-    const selectionRight = (selectedTextLayer.x + selectedTextLayer.width) * scale;
-    const selectionBottom = (selectedTextLayer.y + selectedTextLayer.height) * scale;
-    const toolbarLeft = clampToFrame(
-      selectionRight - toolbarWidth,
-      8,
-      Math.max(8, frameWidth - toolbarWidth - 8),
-    );
-    const toolbarTop = clampToFrame(
-      selectionTop - 40,
-      8,
-      Math.max(8, frameHeight - 44),
-    );
-    const popoverLeft = clampToFrame(
-      selectionRight - popoverWidth,
-      8,
-      Math.max(8, frameWidth - popoverWidth - 8),
-    );
-    const popoverBelowTop = selectionBottom + 12;
-    const popoverAboveTop = selectionTop - estimatedPopoverHeight - 12;
-    const minPopoverTop = 8;
-    const maxPopoverTop = Math.max(8, frameHeight - estimatedPopoverHeight - 8);
-    const canPlaceBelow = popoverBelowTop + estimatedPopoverHeight <= frameHeight - 8;
-    const canPlaceAbove = popoverAboveTop >= 8;
-    const popoverTop =
-      isCompactPreview && !isFullscreenCanvas
-        ? selectionTop < frameHeight / 2
-          ? popoverBelowTop
-          : popoverAboveTop
-        : canPlaceBelow
-          ? popoverBelowTop
-          : canPlaceAbove
-            ? popoverAboveTop
-            : clampToFrame(
-                selectionBottom + 12,
-                minPopoverTop,
-                maxPopoverTop,
-              );
+  if (selectedCanvasLayer) {
+    const resolvedSelectionMetrics = selectionMetrics ?? readSelectionMetrics(selectedCanvasLayer);
+    if (resolvedSelectionMetrics) {
+      const toolbarButtonCount = selectedTextLayer ? 4 : 2;
+      const toolbarWidth = toolbarButtonCount * 30 + (toolbarButtonCount - 1) * 4;
+      const toolbarHeight = 30;
+      const popoverWidth = Math.min(228, frameWidth - 12);
+      const selectionTop = resolvedSelectionMetrics.top;
+      const selectionRight = resolvedSelectionMetrics.right;
+      const selectionBottom = resolvedSelectionMetrics.bottom;
+      const toolbarLeft = clampToFrame(
+        selectionRight - toolbarWidth + 10,
+        6,
+        Math.max(6, frameWidth - toolbarWidth - 6),
+      );
+      const toolbarTop = clampToFrame(
+        selectionTop - 12,
+        6,
+        Math.max(6, frameHeight - toolbarHeight - 6),
+      );
+      const popoverLeft = clampToFrame(
+        selectionRight - popoverWidth,
+        8,
+        Math.max(8, frameWidth - popoverWidth - 8),
+      );
+      const popoverBelowTop = selectionBottom + 12;
+      const popoverAboveTop = selectionTop - estimatedPopoverHeight - 12;
+      const minPopoverTop = 8;
+      const maxPopoverTop = Math.max(8, frameHeight - estimatedPopoverHeight - 8);
+      const canPlaceBelow = popoverBelowTop + estimatedPopoverHeight <= frameHeight - 8;
+      const canPlaceAbove = popoverAboveTop >= 8;
+      const popoverTop =
+        isCompactPreview && !isFullscreenCanvas
+          ? selectionTop < frameHeight / 2
+            ? popoverBelowTop
+            : popoverAboveTop
+          : canPlaceBelow
+            ? popoverBelowTop
+            : canPlaceAbove
+              ? popoverAboveTop
+              : clampToFrame(
+                  selectionBottom + 12,
+                  minPopoverTop,
+                  maxPopoverTop,
+                );
 
-    selectionToolbarStyle = {
-      left: `${toolbarLeft}px`,
-      top: `${toolbarTop}px`,
-    };
+      selectionToolbarStyle = {
+        left: `${toolbarLeft}px`,
+        top: `${toolbarTop}px`,
+      };
 
-    selectionPopoverStyle = {
-      left: `${popoverLeft}px`,
-      top: `${popoverTop}px`,
-      width: `${popoverWidth}px`,
-    };
+      selectionPopoverStyle = {
+        left: `${popoverLeft}px`,
+        top: `${popoverTop}px`,
+        width: `${popoverWidth}px`,
+      };
+    }
 
-    inlineEditorStyle = {
-      left: `${selectedTextLayer.x * scale}px`,
-      top: `${selectedTextLayer.y * scale}px`,
-      width: `${Math.max(selectedTextLayer.width * scale, 140)}px`,
-      height: `${Math.max(selectedTextLayer.height * scale, 88)}px`,
-      transform: `rotate(${selectedTextLayer.rotation}deg)`,
-    };
+    if (selectedTextLayer) {
+      inlineEditorStyle = {
+        left: `${selectedTextLayer.x * scale}px`,
+        top: `${selectedTextLayer.y * scale}px`,
+        width: `${Math.max(selectedTextLayer.width * scale, 140)}px`,
+        height: `${Math.max(selectedTextLayer.height * scale, 88)}px`,
+        transform: `rotate(${selectedTextLayer.rotation}deg)`,
+      };
+    }
   }
 
   return (
@@ -387,12 +482,24 @@ export function EditorCanvas({
                           width: (layer.crop.width / 100) * layer.naturalWidth,
                           height: (layer.crop.height / 100) * layer.naturalHeight,
                         }}
-                        onClick={() =>
-                          layer.kind === 'overlay' ? onSelectLayer(layer.id) : onTapImageLayer(layer.id)
-                        }
-                        onTap={() =>
-                          layer.kind === 'overlay' ? onSelectLayer(layer.id) : onTapImageLayer(layer.id)
-                        }
+                        onClick={() => {
+                          if (layer.kind === 'overlay') {
+                            onSelectLayer(layer.id);
+                          } else {
+                            onTapImageLayer(layer.id);
+                          }
+
+                          syncSelectionMetrics(layer);
+                        }}
+                        onTap={() => {
+                          if (layer.kind === 'overlay') {
+                            onSelectLayer(layer.id);
+                          } else {
+                            onTapImageLayer(layer.id);
+                          }
+
+                          syncSelectionMetrics(layer);
+                        }}
                         onDblClick={() => {
                           if (layer.kind !== 'overlay') {
                             onArmImageDrag(layer.id);
@@ -406,6 +513,7 @@ export function EditorCanvas({
                         onDragStart={(event) => {
                           if (layer.kind === 'overlay') {
                             onSelectLayer(layer.id);
+                            syncSelectionMetrics(layer);
                             return;
                           }
 
@@ -419,9 +527,18 @@ export function EditorCanvas({
                             y: layer.y,
                           });
                           onSelectLayer(layer.id);
+                          syncSelectionMetrics(layer);
                         }}
-                        onDragEnd={(event) => onDragEnd(layer.id, event)}
-                        onTransformEnd={(event) => onTransform(layer.id, event)}
+                        onDragMove={() => syncSelectionMetrics(layer)}
+                        onDragEnd={(event) => {
+                          syncSelectionMetrics(layer);
+                          onDragEnd(layer.id, event);
+                        }}
+                        onTransform={() => syncSelectionMetrics(layer)}
+                        onTransformEnd={(event) => {
+                          syncSelectionMetrics(layer);
+                          onTransform(layer.id, event);
+                        }}
                         ref={(node) => {
                           if (node) {
                             nodeRefs.current[layer.id] = node;
@@ -438,13 +555,29 @@ export function EditorCanvas({
                         draggable
                         rotation={layer.rotation}
                         opacity={editingTextLayerId === layer.id ? 0 : 1}
-                        onTransform={(event) => onTransform(layer.id, event)}
-                        onClick={() => onSelectLayer(layer.id)}
-                        onTap={() => onSelectLayer(layer.id)}
+                        onTransform={(event) => {
+                          onTransform(layer.id, event);
+                          syncSelectionMetrics(layer);
+                        }}
+                        onClick={() => {
+                          onSelectLayer(layer.id);
+                          syncSelectionMetrics(layer);
+                        }}
+                        onTap={() => {
+                          onSelectLayer(layer.id);
+                          syncSelectionMetrics(layer);
+                        }}
                         onDblClick={() => openInlineEditor(layer.id)}
                         onDblTap={() => openInlineEditor(layer.id)}
-                        onDragEnd={(event) => onDragEnd(layer.id, event)}
-                        onTransformEnd={(event) => onTransform(layer.id, event)}
+                        onDragMove={() => syncSelectionMetrics(layer)}
+                        onDragEnd={(event) => {
+                          syncSelectionMetrics(layer);
+                          onDragEnd(layer.id, event);
+                        }}
+                        onTransformEnd={(event) => {
+                          syncSelectionMetrics(layer);
+                          onTransform(layer.id, event);
+                        }}
                         ref={(node) => {
                           if (node) {
                             nodeRefs.current[layer.id] = node;
@@ -501,6 +634,68 @@ export function EditorCanvas({
 
                           if (blockRect) {
                             return null;
+                          }
+
+                          if (backgroundStyle === 'cloud') {
+                            return (
+                              <Group key={`${layer.id}-highlight-${index}`} listening={false}>
+                                <Rect
+                                  x={rect.x - 4}
+                                  y={rect.y - 3}
+                                  width={rect.width + 8}
+                                  height={rect.height + 6}
+                                  cornerRadius={rect.cornerRadius + 8}
+                                  fill={withAlpha(backgroundColor, 0.22)}
+                                />
+                                <Rect
+                                  x={rect.x}
+                                  y={rect.y}
+                                  width={rect.width}
+                                  height={rect.height}
+                                  cornerRadius={rect.cornerRadius}
+                                  fill={backgroundColor}
+                                  shadowColor={withAlpha(backgroundColor, 0.34)}
+                                  shadowBlur={14}
+                                  shadowOpacity={0.26}
+                                />
+                              </Group>
+                            );
+                          }
+
+                          if (backgroundStyle === 'sticker') {
+                            const offsetX = index % 2 === 0 ? 6 : 4;
+                            const offsetY = index % 2 === 0 ? 5 : 7;
+                            return (
+                              <Group key={`${layer.id}-highlight-${index}`} listening={false}>
+                                <Rect
+                                  x={rect.x + offsetX}
+                                  y={rect.y + offsetY}
+                                  width={rect.width}
+                                  height={rect.height}
+                                  cornerRadius={Math.max(14, rect.cornerRadius - 2)}
+                                  fill={withAlpha(backgroundColor, 0.3)}
+                                />
+                                <Rect
+                                  x={rect.x}
+                                  y={rect.y}
+                                  width={rect.width}
+                                  height={rect.height}
+                                  cornerRadius={rect.cornerRadius}
+                                  fill={backgroundColor}
+                                  shadowColor={withAlpha(backgroundColor, 0.28)}
+                                  shadowBlur={10}
+                                  shadowOpacity={0.2}
+                                />
+                                <Rect
+                                  x={rect.x + 6}
+                                  y={rect.y + 5}
+                                  width={Math.max(12, rect.width - 12)}
+                                  height={Math.max(12, rect.height - 10)}
+                                  cornerRadius={Math.max(12, rect.cornerRadius - 6)}
+                                  fill={withAlpha('#fff8f0', 0.12)}
+                                />
+                              </Group>
+                            );
                           }
 
                           return (
@@ -572,28 +767,50 @@ export function EditorCanvas({
             </div>
           </div>
 
-          {selectedTextLayer && selectionToolbarStyle && !isEditingSelectedText ? (
+          {selectedCanvasLayer && selectionToolbarStyle && !isEditingSelectedText ? (
             <>
               <div className="text-selection-toolbar" style={selectionToolbarStyle}>
                 <button
                   type="button"
-                  className={`text-selection-button${isTextToolsOpen ? ' text-selection-button--active' : ''}`}
-                  onClick={onToggleTextTools}
-                  aria-label="Открыть быстрые настройки текста"
+                  className="text-selection-button"
+                  onClick={() => onMoveSelectedLayerToEdge('back')}
+                  aria-label="Перенести слой в самый низ"
+                  disabled={!canSendSelectedLayerToBack}
                 >
-                  Aa
+                  ↓
                 </button>
                 <button
                   type="button"
-                  className="text-selection-button text-selection-button--danger"
-                  onClick={onDeleteSelected}
-                  aria-label="Удалить выбранный текст"
+                  className="text-selection-button"
+                  onClick={() => onMoveSelectedLayerToEdge('front')}
+                  aria-label="Перенести слой в самый верх"
+                  disabled={!canBringSelectedLayerToFront}
                 >
-                  ×
+                  ↑
                 </button>
+                {selectedTextLayer ? (
+                  <>
+                    <button
+                      type="button"
+                      className={`text-selection-button${isTextToolsOpen ? ' text-selection-button--active' : ''}`}
+                      onClick={onToggleTextTools}
+                      aria-label="Открыть быстрые настройки текста"
+                    >
+                      Aa
+                    </button>
+                    <button
+                      type="button"
+                      className="text-selection-button text-selection-button--danger"
+                      onClick={onDeleteSelected}
+                      aria-label="Удалить выбранный текст"
+                    >
+                      ×
+                    </button>
+                  </>
+                ) : null}
               </div>
 
-              {isTextToolsOpen && selectionPopoverStyle ? (
+              {selectedTextLayer && isTextToolsOpen && selectionPopoverStyle ? (
                 <div className="text-selection-popover" style={selectionPopoverStyle}>
                   <button
                     type="button"

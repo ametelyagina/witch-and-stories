@@ -90,7 +90,14 @@ const normalizeTextBackgroundStyle = (value: unknown) => {
     return 'frame' as const;
   }
 
-  if (value === 'soft' || value === 'sharp' || value === 'block' || value === 'frame') {
+  if (
+    value === 'soft' ||
+    value === 'sharp' ||
+    value === 'cloud' ||
+    value === 'block' ||
+    value === 'frame' ||
+    value === 'sticker'
+  ) {
     return value;
   }
 

@@ -76,6 +76,13 @@ function App() {
     () => layers.find((layer) => layer.id === selectedLayerId) || null,
     [layers, selectedLayerId],
   );
+  const selectedLayerIndex = useMemo(
+    () => (selectedLayerId ? layers.findIndex((layer) => layer.id === selectedLayerId) : -1),
+    [layers, selectedLayerId],
+  );
+  const canSendSelectedLayerToBack = selectedLayerIndex > 0;
+  const canBringSelectedLayerToFront =
+    selectedLayerIndex !== -1 && selectedLayerIndex < layers.length - 1;
   const isPhoneViewport = viewport.width <= 720;
   const fontOptions = useMemo(() => getFontOptions(fonts), [fonts]);
   const textStylePresets = useMemo(
@@ -596,6 +603,23 @@ function App() {
       const updated = [...prev];
       [updated[index], updated[target]] = [updated[target], updated[index]];
       return updated;
+    });
+  };
+
+  const moveSelectedLayerToEdge = (edge: 'back' | 'front') => {
+    if (!selectedLayerId) {
+      return;
+    }
+
+    setLayers((prev) => {
+      const index = prev.findIndex((layer) => layer.id === selectedLayerId);
+      if (index === -1) {
+        return prev;
+      }
+
+      const selected = prev[index];
+      const remaining = prev.filter((layer) => layer.id !== selectedLayerId);
+      return edge === 'back' ? [selected, ...remaining] : [...remaining, selected];
     });
   };
 
@@ -1135,6 +1159,9 @@ function App() {
             onArmImageDrag={handleArmImageDrag}
             onToggleTextTools={handleToggleTextTools}
             onQuickTextStyleChange={handleQuickTextStyleChange}
+            onMoveSelectedLayerToEdge={moveSelectedLayerToEdge}
+            canSendSelectedLayerToBack={canSendSelectedLayerToBack}
+            canBringSelectedLayerToFront={canBringSelectedLayerToFront}
             onDeleteUploadedFont={handleDeleteUploadedFont}
             onDeleteSelected={removeSelectedLayer}
             onRequestSavePreview={handleRequestSavePreview}
