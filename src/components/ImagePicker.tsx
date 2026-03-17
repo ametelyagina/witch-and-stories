@@ -1,4 +1,4 @@
-import { CSSProperties, useEffect, useMemo, useState } from 'react';
+import { CSSProperties, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from 'react';
 import Cropper, { Area, Point } from 'react-easy-crop';
 
 import { ImageCrop, Preset, PresetDefinition } from '../editor/types';
@@ -68,6 +68,11 @@ export function ImagePicker({
   const [zoom, setZoom] = useState(1);
   const [croppedArea, setCroppedArea] = useState<ImageCrop>(FULL_IMAGE_CROP);
   const [activePanel, setActivePanel] = useState<ImagePickerPanelId>('format');
+  const fitTouchPointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const fitPinchGestureRef = useRef<{
+    startDistance: number;
+    startZoom: number;
+  } | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -81,6 +86,15 @@ export function ImagePicker({
     setCroppedArea(FULL_IMAGE_CROP);
     setActivePanel('format');
   }, [image.src, initialPreset, open]);
+
+  useEffect(() => {
+    if (open) {
+      return;
+    }
+
+    fitTouchPointersRef.current.clear();
+    fitPinchGestureRef.current = null;
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -155,6 +169,99 @@ export function ImagePicker({
     setCroppedArea(normalizeCropArea(nextArea));
   };
 
+  const clearFitPinchState = () => {
+    fitPinchGestureRef.current = null;
+    if (fitTouchPointersRef.current.size === 0) {
+      fitTouchPointersRef.current.clear();
+    }
+  };
+
+  const readFitPinchDistance = () => {
+    const [first, second] = Array.from(fitTouchPointersRef.current.values());
+    if (!first || !second) {
+      return 0;
+    }
+
+    return Math.hypot(second.x - first.x, second.y - first.y);
+  };
+
+  const clampFitZoom = (value: number) => Math.min(FIT_MAX_ZOOM, Math.max(FIT_MIN_ZOOM, value));
+
+  const handleFitPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (mode !== 'fit' || event.pointerType !== 'touch') {
+      return;
+    }
+
+    fitTouchPointersRef.current.set(event.pointerId, {
+      x: event.clientX,
+      y: event.clientY,
+    });
+
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Ignore browsers that refuse pointer capture for synthetic or secondary touches.
+    }
+
+    if (fitTouchPointersRef.current.size < 2) {
+      return;
+    }
+
+    const startDistance = readFitPinchDistance();
+    if (startDistance <= 0) {
+      return;
+    }
+
+    event.preventDefault();
+    fitPinchGestureRef.current = {
+      startDistance,
+      startZoom: clampFitZoom(zoom),
+    };
+  };
+
+  const handleFitPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (mode !== 'fit' || event.pointerType !== 'touch') {
+      return;
+    }
+
+    if (fitTouchPointersRef.current.has(event.pointerId)) {
+      fitTouchPointersRef.current.set(event.pointerId, {
+        x: event.clientX,
+        y: event.clientY,
+      });
+    }
+
+    const gesture = fitPinchGestureRef.current;
+    if (!gesture || fitTouchPointersRef.current.size < 2) {
+      return;
+    }
+
+    const nextDistance = readFitPinchDistance();
+    if (nextDistance <= 0 || gesture.startDistance <= 0) {
+      return;
+    }
+
+    event.preventDefault();
+    setZoom(clampFitZoom((gesture.startZoom * nextDistance) / gesture.startDistance));
+  };
+
+  const handleFitPointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (mode !== 'fit' || event.pointerType !== 'touch') {
+      return;
+    }
+
+    fitTouchPointersRef.current.delete(event.pointerId);
+    if (fitTouchPointersRef.current.size < 2) {
+      clearFitPinchState();
+    }
+
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // Ignore stale pointer captures.
+    }
+  };
+
   if (!open) {
     return null;
   }
@@ -196,6 +303,10 @@ export function ImagePicker({
               <div
                 className={`image-picker-stage${mode === 'fit' ? ' image-picker-stage--fit' : ''}`}
                 style={stageStyle}
+                onPointerDown={handleFitPointerDown}
+                onPointerMove={handleFitPointerMove}
+                onPointerUp={handleFitPointerEnd}
+                onPointerCancel={handleFitPointerEnd}
               >
                 {mode === 'cover' ? (
                   <Cropper

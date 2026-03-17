@@ -1850,21 +1850,10 @@ test('fit mode can shrink the full image inside the artboard with margins', asyn
     }
   });
   await page.getByRole('button', { name: /^целиком$/i }).click();
-  await page.getByRole('tab', { name: /масштаб/i }).evaluate((element) => {
-    if (element instanceof HTMLButtonElement) {
-      element.click();
-    }
-  });
-  await page.locator('.image-picker-zoom input').evaluate((element) => {
-    if (!(element instanceof HTMLInputElement)) {
-      return;
-    }
-
-    const prototype = Object.getPrototypeOf(element);
-    const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
-    descriptor?.set?.call(element, '0.5');
-    element.dispatchEvent(new Event('input', { bubbles: true }));
-    element.dispatchEvent(new Event('change', { bubbles: true }));
+  await dispatchPinchGesture(page, {
+    selector: '.image-picker-stage',
+    startDistance: 220,
+    endDistance: 110,
   });
   await page.getByRole('button', { name: /использовать фото/i }).click();
   await waitForSavedLayerCount(page, 1);
