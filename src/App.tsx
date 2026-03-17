@@ -71,7 +71,11 @@ function getCanvasWorkspace({
   let maxX = width;
   let maxY = height;
 
-  for (const layer of layers) {
+  const overflowLayers = layers.filter(
+    (layer) => layer.type === 'text' || (layer.type === 'image' && layer.kind === 'overlay'),
+  );
+
+  for (const layer of overflowLayers) {
     minX = Math.min(minX, layer.x);
     minY = Math.min(minY, layer.y);
     maxX = Math.max(maxX, layer.x + layer.width);
@@ -1320,7 +1324,6 @@ function App() {
           onMoveLayer={moveLayer}
           onChange={updateLayer}
           onTextChange={updateTextField}
-          onCropChange={updateImageCrop}
           fonts={fonts}
           textStylePresets={textStylePresets}
           onSaveTextStylePreset={handleSaveCurrentTextStylePreset}

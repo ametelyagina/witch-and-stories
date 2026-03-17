@@ -1,4 +1,11 @@
-import { CSSProperties, PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
+import {
+  CSSProperties,
+  PointerEvent as ReactPointerEvent,
+  TouchEvent as ReactTouchEvent,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { flushSync } from 'react-dom';
 
 import { FontPicker } from './FontPicker';
@@ -181,6 +188,12 @@ export function EditorCanvas({
     startZoom: number;
     shouldCollapse: boolean;
   } | null>(null);
+  const touchPinchGestureRef = useRef<{
+    mode: 'compact' | 'fullscreen';
+    startDistance: number;
+    startZoom: number;
+    shouldCollapse: boolean;
+  } | null>(null);
   const selectedCanvasLayer = selectedLayer;
   const selectedTextLayer = isTextLayer(selectedLayer) ? selectedLayer : null;
   const [selectionMetrics, setSelectionMetrics] = useState<SelectionMetrics | null>(null);
@@ -267,6 +280,7 @@ export function EditorCanvas({
 
   const clearPinchState = () => {
     pinchGestureRef.current = null;
+    touchPinchGestureRef.current = null;
     if (touchPointersRef.current.size === 0) {
       pinchActionLockRef.current = null;
     }
@@ -281,11 +295,40 @@ export function EditorCanvas({
     return Math.hypot(second.x - first.x, second.y - first.y);
   };
 
+  const readTouchPinchDistance = (touches: TouchList) => {
+    if (touches.length < 2) {
+      return 0;
+    }
+
+    const first = touches[0];
+    const second = touches[1];
+    return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+  };
+
+  const isTwoFingerGestureActive = () =>
+    touchPointersRef.current.size >= 2 ||
+    Boolean(pinchGestureRef.current) ||
+    Boolean(touchPinchGestureRef.current);
+
+  const stopSelectedLayerManipulation = () => {
+    transformerRef.current?.stopTransform();
+
+    if (!selectedCanvasLayer) {
+      return;
+    }
+
+    const node = nodeRefs.current[selectedCanvasLayer.id];
+    if (node instanceof Konva.Node && node.isDragging()) {
+      node.stopDrag();
+    }
+  };
+
   useEffect(() => {
     return () => {
       clearLongPressTimer();
       touchPointersRef.current.clear();
       pinchGestureRef.current = null;
+      touchPinchGestureRef.current = null;
       pinchActionLockRef.current = null;
     };
   }, []);
@@ -308,6 +351,7 @@ export function EditorCanvas({
 
     if (touchPointersRef.current.size >= 2) {
       cancelLongPress();
+      stopSelectedLayerManipulation();
 
       if (
         !pinchActionLockRef.current &&
@@ -357,6 +401,7 @@ export function EditorCanvas({
     const pinchGesture = pinchGestureRef.current;
     if (event.pointerType === 'touch' && pinchGesture && touchPointersRef.current.size >= 2) {
       cancelLongPress();
+      stopSelectedLayerManipulation();
 
       const nextDistance = readPinchDistance();
       if (nextDistance <= 0 || pinchGesture.startDistance <= 0) {
@@ -415,6 +460,88 @@ export function EditorCanvas({
     }
 
     cancelLongPress();
+  };
+
+  const handleStageTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (event.touches.length < 2) {
+      return;
+    }
+
+    event.preventDefault();
+    cancelLongPress();
+    stopSelectedLayerManipulation();
+
+    if (
+      pinchActionLockRef.current ||
+      (!isCompactPreview && !isFullscreenCanvas) ||
+      touchPinchGestureRef.current
+    ) {
+      return;
+    }
+
+    const startDistance = readTouchPinchDistance(event.touches);
+    if (startDistance <= 0) {
+      return;
+    }
+
+    touchPinchGestureRef.current = {
+      mode: isFullscreenCanvas ? 'fullscreen' : 'compact',
+      startDistance,
+      startZoom: fullscreenZoom,
+      shouldCollapse: false,
+    };
+  };
+
+  const handleStageTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const pinchGesture = touchPinchGestureRef.current;
+    if (!pinchGesture || event.touches.length < 2) {
+      return;
+    }
+
+    event.preventDefault();
+    cancelLongPress();
+    stopSelectedLayerManipulation();
+
+    const nextDistance = readTouchPinchDistance(event.touches);
+    if (nextDistance <= 0 || pinchGesture.startDistance <= 0) {
+      return;
+    }
+
+    const stretchFactor = nextDistance / pinchGesture.startDistance;
+    if (pinchGesture.mode === 'compact') {
+      if (stretchFactor >= 1.12 && !pinchActionLockRef.current) {
+        pinchActionLockRef.current = 'expand';
+        touchPinchGestureRef.current = null;
+        onPinchExpand();
+      }
+      return;
+    }
+
+    const nextZoom = Math.min(2.4, Math.max(1, pinchGesture.startZoom * stretchFactor));
+    pinchGesture.shouldCollapse = nextZoom <= 1.02 && stretchFactor <= 0.88;
+    onPinchZoom(nextZoom);
+  };
+
+  const handleStageTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
+    const pinchGesture = touchPinchGestureRef.current;
+    if (!pinchGesture) {
+      if (event.touches.length === 0) {
+        pinchActionLockRef.current = null;
+      }
+      return;
+    }
+
+    if (event.touches.length < 2) {
+      if (pinchGesture.mode === 'fullscreen' && pinchGesture.shouldCollapse) {
+        pinchActionLockRef.current = 'collapse';
+        onPinchCollapse();
+      }
+
+      touchPinchGestureRef.current = null;
+      if (event.touches.length === 0) {
+        pinchActionLockRef.current = null;
+      }
+    }
   };
 
   const handleShellPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
@@ -547,6 +674,332 @@ export function EditorCanvas({
     }
   }
 
+  const renderImageLayer = (layer: Extract<Layer, { type: 'image' }>) => (
+    <KonvaImage
+      key={layer.id}
+      x={layer.x}
+      y={layer.y}
+      image={layer.image}
+      draggable
+      rotation={layer.rotation}
+      width={layer.width}
+      height={layer.height}
+      hitStrokeWidth={layer.kind === 'overlay' ? 36 : 20}
+      dragBoundFunc={(position) =>
+        layer.kind === 'overlay' || dragArmedImageId === layer.id
+          ? position
+          : {
+              x: layer.x,
+              y: layer.y,
+            }
+      }
+      crop={{
+        x: (layer.crop.x / 100) * layer.naturalWidth,
+        y: (layer.crop.y / 100) * layer.naturalHeight,
+        width: (layer.crop.width / 100) * layer.naturalWidth,
+        height: (layer.crop.height / 100) * layer.naturalHeight,
+      }}
+      onClick={() => {
+        if (layer.kind === 'overlay') {
+          onSelectLayer(layer.id);
+        } else {
+          onTapImageLayer(layer.id);
+        }
+
+        syncSelectionMetrics(layer);
+      }}
+      onTap={() => {
+        if (layer.kind === 'overlay') {
+          onSelectLayer(layer.id);
+        } else {
+          onTapImageLayer(layer.id);
+        }
+
+        syncSelectionMetrics(layer);
+      }}
+      onDblClick={() => {
+        if (layer.kind !== 'overlay') {
+          onArmImageDrag(layer.id);
+        }
+      }}
+      onDblTap={() => {
+        if (layer.kind !== 'overlay') {
+          onArmImageDrag(layer.id);
+        }
+      }}
+      onDragStart={(event) => {
+        if (isTwoFingerGestureActive()) {
+          event.target.stopDrag();
+          event.target.position({
+            x: layer.x,
+            y: layer.y,
+          });
+          return;
+        }
+
+        if (layer.kind === 'overlay') {
+          onSelectLayer(layer.id);
+          syncSelectionMetrics(layer);
+          return;
+        }
+
+        if (dragArmedImageId === layer.id) {
+          return;
+        }
+
+        event.target.stopDrag();
+        event.target.position({
+          x: layer.x,
+          y: layer.y,
+        });
+        onSelectLayer(layer.id);
+        syncSelectionMetrics(layer);
+      }}
+      onDragMove={() => {
+        if (isTwoFingerGestureActive()) {
+          stopSelectedLayerManipulation();
+          return;
+        }
+
+        syncSelectionMetrics(layer);
+      }}
+      onDragEnd={(event) => {
+        syncSelectionMetrics(layer);
+        onDragEnd(layer.id, event);
+      }}
+      onTransform={() => {
+        if (isTwoFingerGestureActive()) {
+          stopSelectedLayerManipulation();
+          return;
+        }
+
+        syncSelectionMetrics(layer);
+      }}
+      onTransformEnd={(event) => {
+        syncSelectionMetrics(layer);
+        onTransform(layer.id, event);
+      }}
+      ref={(node) => {
+        if (node) {
+          nodeRefs.current[layer.id] = node;
+        }
+      }}
+    />
+  );
+
+  const renderTextLayer = (layer: TextLayer) => (
+    <Group
+      key={layer.id}
+      x={layer.x}
+      y={layer.y}
+      width={layer.width}
+      height={layer.height}
+      draggable
+      rotation={layer.rotation}
+      opacity={editingTextLayerId === layer.id ? 0 : 1}
+      onTransformStart={() => {
+        if (isTwoFingerGestureActive()) {
+          stopSelectedLayerManipulation();
+        }
+      }}
+      onTransform={(event) => {
+        if (isTwoFingerGestureActive()) {
+          stopSelectedLayerManipulation();
+          return;
+        }
+
+        onTransform(layer.id, event);
+        syncSelectionMetrics(layer);
+      }}
+      onClick={() => {
+        onSelectLayer(layer.id);
+        syncSelectionMetrics(layer);
+      }}
+      onTap={() => {
+        onSelectLayer(layer.id);
+        syncSelectionMetrics(layer);
+      }}
+      onDblClick={() => openInlineEditor(layer.id)}
+      onDblTap={() => openInlineEditor(layer.id)}
+      onDragStart={(event) => {
+        if (!isTwoFingerGestureActive()) {
+          return;
+        }
+
+        event.target.stopDrag();
+        event.target.position({
+          x: layer.x,
+          y: layer.y,
+        });
+      }}
+      onDragMove={() => {
+        if (isTwoFingerGestureActive()) {
+          stopSelectedLayerManipulation();
+          return;
+        }
+
+        syncSelectionMetrics(layer);
+      }}
+      onDragEnd={(event) => {
+        syncSelectionMetrics(layer);
+        onDragEnd(layer.id, event);
+      }}
+      onTransformEnd={(event) => {
+        syncSelectionMetrics(layer);
+        onTransform(layer.id, event);
+      }}
+      ref={(node) => {
+        if (node) {
+          nodeRefs.current[layer.id] = node;
+        }
+      }}
+    >
+      {buildTextHighlightRects(layer).map((rect, index) => {
+        const backgroundStyle = layer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE;
+        const backgroundColor = layer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR;
+        const blockRect =
+          backgroundStyle === 'block' || backgroundStyle === 'frame'
+            ? buildTextHighlightBlock(layer)
+            : null;
+
+        if (blockRect && index === 0) {
+          return (
+            <Group key={`${layer.id}-highlight-${index}`} listening={false}>
+              <Rect
+                x={blockRect.x + (backgroundStyle === 'frame' ? 8 : 6)}
+                y={blockRect.y + (backgroundStyle === 'frame' ? 8 : 6)}
+                width={Math.max(24, blockRect.width - (backgroundStyle === 'frame' ? 12 : 10))}
+                height={Math.max(24, blockRect.height - (backgroundStyle === 'frame' ? 12 : 10))}
+                cornerRadius={Math.max(14, blockRect.cornerRadius - 6)}
+                fill={withAlpha(backgroundColor, backgroundStyle === 'frame' ? 0.24 : 0.34)}
+              />
+              <Rect
+                x={blockRect.x}
+                y={blockRect.y}
+                width={blockRect.width}
+                height={blockRect.height}
+                cornerRadius={blockRect.cornerRadius}
+                fill={backgroundColor}
+                shadowColor={withAlpha(backgroundColor, 0.34)}
+                shadowBlur={backgroundStyle === 'frame' ? 14 : 18}
+                shadowOpacity={backgroundStyle === 'frame' ? 0.2 : 0.24}
+              />
+              {backgroundStyle === 'frame' ? (
+                <Rect
+                  x={blockRect.x + 8}
+                  y={blockRect.y + 8}
+                  width={Math.max(12, blockRect.width - 16)}
+                  height={Math.max(12, blockRect.height - 16)}
+                  cornerRadius={Math.max(12, blockRect.cornerRadius - 8)}
+                  fill={withAlpha(backgroundColor, 0.12)}
+                  stroke="rgba(255, 248, 240, 0.74)"
+                  strokeWidth={1.5}
+                />
+              ) : null}
+            </Group>
+          );
+        }
+
+        if (blockRect) {
+          return null;
+        }
+
+        if (backgroundStyle === 'cloud') {
+          return (
+            <Group key={`${layer.id}-highlight-${index}`} listening={false}>
+              <Rect
+                x={rect.x - 4}
+                y={rect.y - 3}
+                width={rect.width + 8}
+                height={rect.height + 6}
+                cornerRadius={rect.cornerRadius + 8}
+                fill={withAlpha(backgroundColor, 0.22)}
+              />
+              <Rect
+                x={rect.x}
+                y={rect.y}
+                width={rect.width}
+                height={rect.height}
+                cornerRadius={rect.cornerRadius}
+                fill={backgroundColor}
+                shadowColor={withAlpha(backgroundColor, 0.34)}
+                shadowBlur={14}
+                shadowOpacity={0.26}
+              />
+            </Group>
+          );
+        }
+
+        if (backgroundStyle === 'sticker') {
+          const offsetX = index % 2 === 0 ? 6 : 4;
+          const offsetY = index % 2 === 0 ? 5 : 7;
+          return (
+            <Group key={`${layer.id}-highlight-${index}`} listening={false}>
+              <Rect
+                x={rect.x + offsetX}
+                y={rect.y + offsetY}
+                width={rect.width}
+                height={rect.height}
+                cornerRadius={Math.max(14, rect.cornerRadius - 2)}
+                fill={withAlpha(backgroundColor, 0.3)}
+              />
+              <Rect
+                x={rect.x}
+                y={rect.y}
+                width={rect.width}
+                height={rect.height}
+                cornerRadius={rect.cornerRadius}
+                fill={backgroundColor}
+                shadowColor={withAlpha(backgroundColor, 0.28)}
+                shadowBlur={10}
+                shadowOpacity={0.2}
+              />
+              <Rect
+                x={rect.x + 6}
+                y={rect.y + 5}
+                width={Math.max(12, rect.width - 12)}
+                height={Math.max(12, rect.height - 10)}
+                cornerRadius={Math.max(12, rect.cornerRadius - 6)}
+                fill={withAlpha('#fff8f0', 0.12)}
+              />
+            </Group>
+          );
+        }
+
+        return (
+          <Rect
+            key={`${layer.id}-highlight-${index}`}
+            x={rect.x}
+            y={rect.y}
+            width={rect.width}
+            height={rect.height}
+            cornerRadius={rect.cornerRadius}
+            fill={backgroundColor}
+            shadowColor={backgroundStyle === 'soft' ? withAlpha(backgroundColor, 0.3) : undefined}
+            shadowBlur={backgroundStyle === 'soft' ? 10 : 0}
+            shadowOpacity={backgroundStyle === 'soft' ? 0.24 : 0}
+            listening={false}
+          />
+        );
+      })}
+      <Text
+        x={0}
+        y={0}
+        text={layer.text}
+        width={layer.width}
+        height={layer.height}
+        fontFamily={layer.fontFamily}
+        fontStyle={layer.fontStyle ?? 'normal'}
+        fontSize={layer.fontSize}
+        fill={layer.color}
+        align={layer.align}
+        letterSpacing={layer.letterSpacing ?? 0}
+        lineHeight={layer.lineHeight}
+        wrap="word"
+      />
+    </Group>
+  );
+
   return (
     <section
       className="canvas-shell"
@@ -571,6 +1024,10 @@ export function EditorCanvas({
             onPointerUp={handleStagePointerEnd}
             onPointerCancel={handleStagePointerEnd}
             onPointerLeave={handleStagePointerEnd}
+            onTouchStart={handleStageTouchStart}
+            onTouchMove={handleStageTouchMove}
+            onTouchEnd={handleStageTouchEnd}
+            onTouchCancel={handleStageTouchEnd}
           >
             <div
               className="canvas-stage-inner"
@@ -596,287 +1053,30 @@ export function EditorCanvas({
                     fill="#fff"
                     listening={false}
                   />
-                  <Group x={canvasOffsetX} y={canvasOffsetY}>
+                  <Group
+                    x={canvasOffsetX}
+                    y={canvasOffsetY}
+                    clip={{
+                      x: 0,
+                      y: 0,
+                      width,
+                      height,
+                    }}
+                  >
                     {layers.map((layer) =>
-                      layer.type === 'image' ? (
-                        <KonvaImage
-                          key={layer.id}
-                          x={layer.x}
-                          y={layer.y}
-                          image={layer.image}
-                          draggable
-                          rotation={layer.rotation}
-                          width={layer.width}
-                          height={layer.height}
-                          hitStrokeWidth={layer.kind === 'overlay' ? 36 : 20}
-                          dragBoundFunc={(position) =>
-                            layer.kind === 'overlay' || dragArmedImageId === layer.id
-                              ? position
-                              : {
-                                  x: layer.x,
-                                  y: layer.y,
-                                }
-                          }
-                          crop={{
-                            x: (layer.crop.x / 100) * layer.naturalWidth,
-                            y: (layer.crop.y / 100) * layer.naturalHeight,
-                            width: (layer.crop.width / 100) * layer.naturalWidth,
-                            height: (layer.crop.height / 100) * layer.naturalHeight,
-                          }}
-                          onClick={() => {
-                            if (layer.kind === 'overlay') {
-                              onSelectLayer(layer.id);
-                            } else {
-                              onTapImageLayer(layer.id);
-                            }
-
-                            syncSelectionMetrics(layer);
-                          }}
-                          onTap={() => {
-                            if (layer.kind === 'overlay') {
-                              onSelectLayer(layer.id);
-                            } else {
-                              onTapImageLayer(layer.id);
-                            }
-
-                            syncSelectionMetrics(layer);
-                          }}
-                          onDblClick={() => {
-                            if (layer.kind !== 'overlay') {
-                              onArmImageDrag(layer.id);
-                            }
-                          }}
-                          onDblTap={() => {
-                            if (layer.kind !== 'overlay') {
-                              onArmImageDrag(layer.id);
-                            }
-                          }}
-                          onDragStart={(event) => {
-                            if (layer.kind === 'overlay') {
-                              onSelectLayer(layer.id);
-                              syncSelectionMetrics(layer);
-                              return;
-                            }
-
-                            if (dragArmedImageId === layer.id) {
-                              return;
-                            }
-
-                            event.target.stopDrag();
-                            event.target.position({
-                              x: layer.x,
-                              y: layer.y,
-                            });
-                            onSelectLayer(layer.id);
-                            syncSelectionMetrics(layer);
-                          }}
-                          onDragMove={() => syncSelectionMetrics(layer)}
-                          onDragEnd={(event) => {
-                            syncSelectionMetrics(layer);
-                            onDragEnd(layer.id, event);
-                          }}
-                          onTransform={() => syncSelectionMetrics(layer)}
-                          onTransformEnd={(event) => {
-                            syncSelectionMetrics(layer);
-                            onTransform(layer.id, event);
-                          }}
-                          ref={(node) => {
-                            if (node) {
-                              nodeRefs.current[layer.id] = node;
-                            }
-                          }}
-                        />
-                      ) : (
-                        <Group
-                          key={layer.id}
-                          x={layer.x}
-                          y={layer.y}
-                          width={layer.width}
-                          height={layer.height}
-                          draggable
-                          rotation={layer.rotation}
-                          opacity={editingTextLayerId === layer.id ? 0 : 1}
-                          onTransform={(event) => {
-                            onTransform(layer.id, event);
-                            syncSelectionMetrics(layer);
-                          }}
-                          onClick={() => {
-                            onSelectLayer(layer.id);
-                            syncSelectionMetrics(layer);
-                          }}
-                          onTap={() => {
-                            onSelectLayer(layer.id);
-                            syncSelectionMetrics(layer);
-                          }}
-                          onDblClick={() => openInlineEditor(layer.id)}
-                          onDblTap={() => openInlineEditor(layer.id)}
-                          onDragMove={() => syncSelectionMetrics(layer)}
-                          onDragEnd={(event) => {
-                            syncSelectionMetrics(layer);
-                            onDragEnd(layer.id, event);
-                          }}
-                          onTransformEnd={(event) => {
-                            syncSelectionMetrics(layer);
-                            onTransform(layer.id, event);
-                          }}
-                          ref={(node) => {
-                            if (node) {
-                              nodeRefs.current[layer.id] = node;
-                            }
-                          }}
-                        >
-                        {buildTextHighlightRects(layer).map((rect, index) => {
-                          const backgroundStyle =
-                            layer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE;
-                          const backgroundColor =
-                            layer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR;
-                          const blockRect =
-                            backgroundStyle === 'block' || backgroundStyle === 'frame'
-                              ? buildTextHighlightBlock(layer)
-                              : null;
-
-                          if (blockRect && index === 0) {
-                            return (
-                              <Group key={`${layer.id}-highlight-${index}`} listening={false}>
-                                <Rect
-                                  x={blockRect.x + (backgroundStyle === 'frame' ? 8 : 6)}
-                                  y={blockRect.y + (backgroundStyle === 'frame' ? 8 : 6)}
-                                  width={Math.max(24, blockRect.width - (backgroundStyle === 'frame' ? 12 : 10))}
-                                  height={Math.max(24, blockRect.height - (backgroundStyle === 'frame' ? 12 : 10))}
-                                  cornerRadius={Math.max(14, blockRect.cornerRadius - 6)}
-                                  fill={withAlpha(backgroundColor, backgroundStyle === 'frame' ? 0.24 : 0.34)}
-                                />
-                                <Rect
-                                  x={blockRect.x}
-                                  y={blockRect.y}
-                                  width={blockRect.width}
-                                  height={blockRect.height}
-                                  cornerRadius={blockRect.cornerRadius}
-                                  fill={backgroundColor}
-                                  shadowColor={withAlpha(backgroundColor, 0.34)}
-                                  shadowBlur={backgroundStyle === 'frame' ? 14 : 18}
-                                  shadowOpacity={backgroundStyle === 'frame' ? 0.2 : 0.24}
-                                />
-                                {backgroundStyle === 'frame' ? (
-                                  <Rect
-                                    x={blockRect.x + 8}
-                                    y={blockRect.y + 8}
-                                    width={Math.max(12, blockRect.width - 16)}
-                                    height={Math.max(12, blockRect.height - 16)}
-                                    cornerRadius={Math.max(12, blockRect.cornerRadius - 8)}
-                                    fill={withAlpha(backgroundColor, 0.12)}
-                                    stroke="rgba(255, 248, 240, 0.74)"
-                                    strokeWidth={1.5}
-                                  />
-                                ) : null}
-                              </Group>
-                            );
-                          }
-
-                          if (blockRect) {
-                            return null;
-                          }
-
-                          if (backgroundStyle === 'cloud') {
-                            return (
-                              <Group key={`${layer.id}-highlight-${index}`} listening={false}>
-                                <Rect
-                                  x={rect.x - 4}
-                                  y={rect.y - 3}
-                                  width={rect.width + 8}
-                                  height={rect.height + 6}
-                                  cornerRadius={rect.cornerRadius + 8}
-                                  fill={withAlpha(backgroundColor, 0.22)}
-                                />
-                                <Rect
-                                  x={rect.x}
-                                  y={rect.y}
-                                  width={rect.width}
-                                  height={rect.height}
-                                  cornerRadius={rect.cornerRadius}
-                                  fill={backgroundColor}
-                                  shadowColor={withAlpha(backgroundColor, 0.34)}
-                                  shadowBlur={14}
-                                  shadowOpacity={0.26}
-                                />
-                              </Group>
-                            );
-                          }
-
-                          if (backgroundStyle === 'sticker') {
-                            const offsetX = index % 2 === 0 ? 6 : 4;
-                            const offsetY = index % 2 === 0 ? 5 : 7;
-                            return (
-                              <Group key={`${layer.id}-highlight-${index}`} listening={false}>
-                                <Rect
-                                  x={rect.x + offsetX}
-                                  y={rect.y + offsetY}
-                                  width={rect.width}
-                                  height={rect.height}
-                                  cornerRadius={Math.max(14, rect.cornerRadius - 2)}
-                                  fill={withAlpha(backgroundColor, 0.3)}
-                                />
-                                <Rect
-                                  x={rect.x}
-                                  y={rect.y}
-                                  width={rect.width}
-                                  height={rect.height}
-                                  cornerRadius={rect.cornerRadius}
-                                  fill={backgroundColor}
-                                  shadowColor={withAlpha(backgroundColor, 0.28)}
-                                  shadowBlur={10}
-                                  shadowOpacity={0.2}
-                                />
-                                <Rect
-                                  x={rect.x + 6}
-                                  y={rect.y + 5}
-                                  width={Math.max(12, rect.width - 12)}
-                                  height={Math.max(12, rect.height - 10)}
-                                  cornerRadius={Math.max(12, rect.cornerRadius - 6)}
-                                  fill={withAlpha('#fff8f0', 0.12)}
-                                />
-                              </Group>
-                            );
-                          }
-
-                          return (
-                            <Rect
-                              key={`${layer.id}-highlight-${index}`}
-                              x={rect.x}
-                              y={rect.y}
-                              width={rect.width}
-                              height={rect.height}
-                              cornerRadius={rect.cornerRadius}
-                              fill={backgroundColor}
-                              shadowColor={
-                                backgroundStyle === 'soft'
-                                  ? withAlpha(backgroundColor, 0.3)
-                                  : undefined
-                              }
-                              shadowBlur={backgroundStyle === 'soft' ? 10 : 0}
-                              shadowOpacity={backgroundStyle === 'soft' ? 0.24 : 0}
-                              listening={false}
-                            />
-                          );
-                        })}
-                          <Text
-                            x={0}
-                            y={0}
-                            text={layer.text}
-                            width={layer.width}
-                            height={layer.height}
-                            fontFamily={layer.fontFamily}
-                            fontStyle={layer.fontStyle ?? 'normal'}
-                            fontSize={layer.fontSize}
-                            fill={layer.color}
-                            align={layer.align}
-                            letterSpacing={layer.letterSpacing ?? 0}
-                            lineHeight={layer.lineHeight}
-                            wrap="word"
-                          />
-                        </Group>
-                      ),
+                      layer.type === 'image' && layer.kind === 'background'
+                        ? renderImageLayer(layer)
+                        : null,
                     )}
+                  </Group>
+                  <Group x={canvasOffsetX} y={canvasOffsetY}>
+                    {layers.map((layer) => {
+                      if (layer.type === 'image') {
+                        return layer.kind === 'overlay' ? renderImageLayer(layer) : null;
+                      }
+
+                      return renderTextLayer(layer);
+                    })}
                   </Group>
                   <Transformer
                     ref={transformerRef}

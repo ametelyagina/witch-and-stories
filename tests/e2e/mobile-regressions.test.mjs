@@ -459,6 +459,32 @@ async function sampleCanvasPixel(page, sample) {
   }, sample);
 }
 
+async function sampleStagePixel(page, sample) {
+  return page.evaluate(({ stageX, stageY }) => {
+    const canvas = document.querySelector('.konvajs-content canvas');
+    const stageInner = document.querySelector('.canvas-stage-inner');
+    if (!(canvas instanceof HTMLCanvasElement) || !(stageInner instanceof HTMLElement)) {
+      return null;
+    }
+
+    const context = canvas.getContext('2d');
+    if (!context) {
+      return null;
+    }
+
+    const stageWidth = Number.parseFloat(getComputedStyle(stageInner).width);
+    const ratio = canvas.width / stageWidth;
+    const sampleX = Math.round(stageX * ratio);
+    const sampleY = Math.round(stageY * ratio);
+
+    return {
+      sampleX,
+      sampleY,
+      pixel: Array.from(context.getImageData(sampleX, sampleY, 1, 1).data),
+    };
+  }, sample);
+}
+
 test('mobile expand turns canvas into near-fullscreen stage', async (t) => {
   const { context, page } = await openMobilePage();
   t.after(async () => context.close());
@@ -511,7 +537,7 @@ test('compact canvas keeps overflow workspace visible around smaller preset', as
   });
   const { context, page } = await openMobilePage({
     state: buildState({
-      preset: 'post',
+      preset: 'carousel',
       selectedLayerId: overflowTextLayer.id,
       layers: [overflowTextLayer],
     }),
@@ -552,6 +578,56 @@ test('compact canvas keeps overflow workspace visible around smaller preset', as
   assert(metrics.toolbar.bottom <= metrics.frame.bottom + 1);
 });
 
+test('compact workspace clips background to artboard while keeping fields outside empty', async (t) => {
+  const backgroundLayer = buildImageLayer({
+    id: 'background-clip',
+    kind: 'background',
+    x: 0,
+    y: 0,
+    width: 1080,
+    height: 1920,
+    naturalWidth: 1080,
+    naturalHeight: 1920,
+  });
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      preset: 'carousel',
+      layers: [backgroundLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  const metrics = await page.evaluate(() => {
+    const stageInner = document.querySelector('.canvas-stage-inner');
+    if (!(stageInner instanceof HTMLElement)) {
+      return null;
+    }
+
+    const stageWidth = Number.parseFloat(getComputedStyle(stageInner).width);
+    const stageHeight = Number.parseFloat(getComputedStyle(stageInner).height);
+    const artboardWidth = 1080;
+    const artboardHeight = 1350;
+    const offsetX = (stageWidth - artboardWidth) / 2;
+    const offsetY = (stageHeight - artboardHeight) / 2;
+
+    return {
+      stageHeight,
+      stageX: offsetX + 140,
+      stageY: offsetY + artboardHeight + 28,
+    };
+  });
+
+  assert(metrics);
+  assert(metrics.stageHeight < 1700);
+
+  const outsidePixel = await sampleStagePixel(page, {
+    stageX: metrics.stageX,
+    stageY: metrics.stageY,
+  });
+  assert(outsidePixel);
+  assert.notDeepEqual(outsidePixel.pixel, [255, 126, 80, 255]);
+});
+
 test('pinch out on compact canvas expands mobile stage', async (t) => {
   const backgroundLayer = buildImageLayer({
     id: 'background-1',
@@ -577,6 +653,30 @@ test('pinch out on compact canvas expands mobile stage', async (t) => {
 
   await page.locator('.canvas-column--expanded').waitFor({ state: 'visible' });
   await page.getByRole('button', { name: /свернуть/i }).waitFor({ state: 'visible' });
+});
+
+test('pinch out does not move selected overlay layer on mobile', async (t) => {
+  const imageLayer = buildImageLayer();
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      selectedLayerId: imageLayer.id,
+      layers: [imageLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  await dispatchPinchGesture(page, {
+    startDistance: 82,
+    endDistance: 204,
+  });
+
+  await page.locator('.canvas-column--expanded').waitFor({ state: 'visible' });
+  const savedState = await readSavedState(page);
+  const movedLayer = savedState.layers.find((layer) => layer.id === imageLayer.id);
+
+  assert(movedLayer);
+  assert.equal(movedLayer.x, imageLayer.x);
+  assert.equal(movedLayer.y, imageLayer.y);
 });
 
 test('pinch gestures zoom and collapse fullscreen canvas on mobile', async (t) => {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { FontPicker } from './FontPicker';
-import { ImageCrop, Layer, TextLayer, UploadedFont } from '../editor/types';
+import { Layer, TextLayer, UploadedFont } from '../editor/types';
 import {
   DEFAULT_TEXT_BACKGROUND_COLOR,
   DEFAULT_TEXT_BACKGROUND_STYLE,
@@ -24,14 +24,13 @@ type PropertiesPanelProps = {
   onMoveLayer: (direction: 'backward' | 'forward') => void;
   onChange: (id: string, changes: Partial<Layer>) => void;
   onTextChange: (id: string, value: string) => void;
-  onCropChange: (id: string, axis: keyof ImageCrop, value: number) => void;
   fonts: UploadedFont[];
   textStylePresets: TextStylePreset[];
   onSaveTextStylePreset: () => void;
   onDeleteUploadedFont: (fontId: string) => void;
 };
 
-type PanelSectionId = 'transform' | 'preset' | 'typography' | 'crop';
+type PanelSectionId = 'transform' | 'preset' | 'typography';
 
 export function PropertiesPanel({
   selectedLayer,
@@ -40,7 +39,6 @@ export function PropertiesPanel({
   onMoveLayer,
   onChange,
   onTextChange,
-  onCropChange,
   fonts,
   textStylePresets,
   onSaveTextStylePreset,
@@ -64,7 +62,7 @@ export function PropertiesPanel({
       return;
     }
 
-    setActiveSection(selectedLayer.type === 'text' ? 'typography' : 'crop');
+    setActiveSection(selectedLayer.type === 'text' ? 'typography' : 'transform');
   }, [selectedLayer?.id, selectedLayer?.type]);
 
   const layerLabel =
@@ -87,10 +85,7 @@ export function PropertiesPanel({
           { id: 'preset' as const, label: 'Пресет' },
           { id: 'transform' as const, label: 'Слой' },
         ]
-      : [
-          { id: 'crop' as const, label: 'Кадр' },
-          { id: 'transform' as const, label: 'Слой' },
-        ];
+      : [{ id: 'transform' as const, label: 'Слой' }];
   }, [selectedLayer]);
 
   const applyTextChanges = (
@@ -127,7 +122,7 @@ export function PropertiesPanel({
       {!selectedLayer ? (
         <div className="sidebar-empty">
           <strong>Выберите слой</strong>
-          <p>После выбора здесь появятся точные настройки типографики, кадра и поворота.</p>
+          <p>После выбора здесь появятся точные настройки типографики и поворота.</p>
         </div>
       ) : (
         <>
@@ -450,77 +445,7 @@ export function PropertiesPanel({
                 </div>
               </section>
             </>
-          ) : (
-            <section
-              className={`panel-section${isCompactLayout ? ' panel-section--mobile' : ''}`}
-              hidden={isCompactLayout && activeSection !== 'crop'}
-            >
-              <div className="panel-section-head">
-                <div>
-                  <h3>Кадр</h3>
-                  <p>Тонкая подрезка внутри уже выбранного кадра.</p>
-                </div>
-              </div>
-
-              <div className="stack">
-                <div className="field">
-                  <div className="field-head">
-                    <label>Кадрирование X</label>
-                    <span>{selectedLayer.crop.x.toFixed(0)}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="95"
-                    value={selectedLayer.crop.x}
-                    onChange={(event) => onCropChange(selectedLayer.id, 'x', Number(event.target.value))}
-                  />
-                </div>
-
-                <div className="field">
-                  <div className="field-head">
-                    <label>Кадрирование Y</label>
-                    <span>{selectedLayer.crop.y.toFixed(0)}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0"
-                    max="95"
-                    value={selectedLayer.crop.y}
-                    onChange={(event) => onCropChange(selectedLayer.id, 'y', Number(event.target.value))}
-                  />
-                </div>
-
-                <div className="field">
-                  <div className="field-head">
-                    <label>Ширина кадра</label>
-                    <span>{selectedLayer.crop.width.toFixed(0)}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="5"
-                    max="100"
-                    value={selectedLayer.crop.width}
-                    onChange={(event) => onCropChange(selectedLayer.id, 'width', Number(event.target.value))}
-                  />
-                </div>
-
-                <div className="field">
-                  <div className="field-head">
-                    <label>Высота кадра</label>
-                    <span>{selectedLayer.crop.height.toFixed(0)}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="5"
-                    max="100"
-                    value={selectedLayer.crop.height}
-                    onChange={(event) => onCropChange(selectedLayer.id, 'height', Number(event.target.value))}
-                  />
-                </div>
-              </div>
-            </section>
-          )}
+          ) : null}
         </>
       )}
     </aside>
