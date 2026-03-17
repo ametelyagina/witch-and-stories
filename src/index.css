@@ -405,6 +405,8 @@ input[type='color'] {
   grid-template-columns: 136px minmax(0, 1fr) 300px;
   gap: 16px;
   align-items: start;
+  width: 100%;
+  min-width: 0;
 }
 
 .action-rail {
@@ -1227,6 +1229,16 @@ canvas {
 @media (max-width: 1120px) {
   .workbench {
     grid-template-columns: 1fr;
+  }
+
+  .action-rail,
+  .canvas-column,
+  .canvas-toolbar,
+  .canvas-shell,
+  .canvas-wrap,
+  .sidebar {
+    width: 100%;
+    min-width: 0;
   }
 
   .topbar-intro {

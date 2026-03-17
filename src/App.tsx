@@ -148,8 +148,13 @@ function App() {
       if (!wrapper) return;
 
       const wrapperBounds = wrapper.getBoundingClientRect();
+      const parentBounds = wrapper.parentElement?.getBoundingClientRect();
       const isStackedWorkbench = nextViewport.width <= 1120;
-      let availableWidth = Math.max(280, wrapper.clientWidth - 24);
+      const boundedWorkbenchWidth = Math.max(
+        280,
+        Math.min(parentBounds?.width ?? wrapperBounds.width, nextViewport.width - 40),
+      );
+      let availableWidth = Math.max(280, boundedWorkbenchWidth - 24);
       let availableHeight = isStackedWorkbench
         ? stageSize.height
         : Math.max(220, nextViewport.height - wrapperBounds.top - 44);
@@ -162,6 +167,7 @@ function App() {
             current.width === 0 && current.height === 0 ? current : { width: 0, height: 0 },
           );
         } else {
+          availableWidth = Math.max(280, nextViewport.width - 28);
           availableHeight = Math.max(240, Math.min(nextViewport.height * 0.4, 320));
           setCompactViewportPixels((current) =>
             current.width === availableWidth && current.height === availableHeight
