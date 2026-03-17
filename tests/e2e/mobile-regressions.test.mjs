@@ -1742,7 +1742,7 @@ test('save preview resume clears transient touch state and restores text control
   await page.locator('.text-selection-popover').waitFor({ state: 'visible' });
 });
 
-test('uploaded background is persisted as stage-sized asset and survives reload', async (t) => {
+test('uploaded background is persisted as prepared fit asset and survives reload', async (t) => {
   const hugeSvg =
     '<svg xmlns="http://www.w3.org/2000/svg" width="6000" height="9000" viewBox="0 0 6000 9000">' +
     '<rect width="6000" height="9000" fill="#d6a27d"/>' +
@@ -1767,7 +1767,9 @@ test('uploaded background is persisted as stage-sized asset and survives reload'
   assert.equal(savedState.layers.length, 1);
   assert.equal(savedState.layers[0].kind, 'background');
   assert.equal(savedState.layers[0].naturalWidth, 1080);
-  assert.equal(savedState.layers[0].naturalHeight, 1920);
+  assert.equal(savedState.layers[0].naturalHeight, 1620);
+  assert.equal(savedState.layers[0].x, 0);
+  assert.equal(savedState.layers[0].y, 150);
 
   await page.reload({ waitUntil: 'networkidle' });
 
@@ -1775,7 +1777,9 @@ test('uploaded background is persisted as stage-sized asset and survives reload'
   assert.equal(savedState.layers.length, 1);
   assert.equal(savedState.layers[0].kind, 'background');
   assert.equal(savedState.layers[0].naturalWidth, 1080);
-  assert.equal(savedState.layers[0].naturalHeight, 1920);
+  assert.equal(savedState.layers[0].naturalHeight, 1620);
+  assert.equal(savedState.layers[0].x, 0);
+  assert.equal(savedState.layers[0].y, 150);
 });
 
 test('background layer is locked and recenter button restores canonical position', async (t) => {

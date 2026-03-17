@@ -63,11 +63,11 @@ export function ImagePicker({
     height: typeof window === 'undefined' ? 900 : window.innerHeight,
   }));
   const [selectedPreset, setSelectedPreset] = useState<Preset>(initialPreset);
-  const [mode, setMode] = useState<'cover' | 'fit'>('cover');
+  const [mode, setMode] = useState<'cover' | 'fit'>('fit');
   const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedArea, setCroppedArea] = useState<ImageCrop>(FULL_IMAGE_CROP);
-  const [activePanel, setActivePanel] = useState<ImagePickerPanelId>('format');
+  const [activePanel, setActivePanel] = useState<ImagePickerPanelId>('placement');
   const fitTouchPointersRef = useRef(new Map<number, { x: number; y: number }>());
   const fitPinchGestureRef = useRef<{
     startDistance: number;
@@ -80,11 +80,11 @@ export function ImagePicker({
     }
 
     setSelectedPreset(initialPreset);
-    setMode('cover');
+    setMode('fit');
     setCrop({ x: 0, y: 0 });
     setZoom(1);
     setCroppedArea(FULL_IMAGE_CROP);
-    setActivePanel('format');
+    setActivePanel('placement');
   }, [image.src, initialPreset, open]);
 
   useEffect(() => {
@@ -342,7 +342,7 @@ export function ImagePicker({
             <p className="image-picker-tip">
               {mode === 'cover'
                 ? 'Тяните фото внутри кадра и крутите колесо или ползунок для точной подгонки.'
-                : 'В режиме "Целиком" вся картинка сохраняется без обрезки, а ползунок уменьшает её внутри листа.'}
+                : 'По умолчанию фото вставляется целиком без обрезки. Если нужно, можно ещё уменьшить его внутри листа.'}
             </p>
           </div>
 
@@ -406,16 +406,6 @@ export function ImagePicker({
               <div className="mode-switch">
                 <button
                   type="button"
-                  className={mode === 'cover' ? 'active' : 'ghost'}
-                  onClick={() => {
-                    setMode('cover');
-                    setZoom((current) => Math.min(COVER_MAX_ZOOM, Math.max(COVER_MIN_ZOOM, current)));
-                  }}
-                >
-                  Заполнить лист
-                </button>
-                <button
-                  type="button"
                   className={mode === 'fit' ? 'active' : 'ghost'}
                   onClick={() => {
                     setMode('fit');
@@ -423,6 +413,16 @@ export function ImagePicker({
                   }}
                 >
                   Целиком
+                </button>
+                <button
+                  type="button"
+                  className={mode === 'cover' ? 'active' : 'ghost'}
+                  onClick={() => {
+                    setMode('cover');
+                    setZoom((current) => Math.min(COVER_MAX_ZOOM, Math.max(COVER_MIN_ZOOM, current)));
+                  }}
+                >
+                  Заполнить лист
                 </button>
               </div>
             </section>
