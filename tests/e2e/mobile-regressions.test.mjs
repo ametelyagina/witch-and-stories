@@ -771,6 +771,34 @@ test('mobile expand turns canvas into near-fullscreen stage', async (t) => {
   assert(metrics.scrollHeight <= MOBILE_VIEWPORT.height);
 });
 
+test('fullscreen collapse button stays visible and clickable above text editing', async (t) => {
+  const textLayer = buildTextLayer();
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      selectedLayerId: textLayer.id,
+      layers: [textLayer],
+    }),
+  });
+  t.after(async () => context.close());
+
+  await page.getByRole('button', { name: /развернуть/i }).click();
+  await page.locator('.canvas-column--expanded').waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: /быстрые настройки текста/i }).click();
+  await page.getByRole('button', { name: /изменить текст/i }).click();
+
+  const collapseButton = page.getByRole('button', { name: /свернуть/i });
+  await collapseButton.waitFor({ state: 'visible' });
+  const bounds = await collapseButton.boundingBox();
+  assert(bounds);
+  assert(bounds.x >= 0);
+  assert(bounds.y >= 0);
+  assert(bounds.x + bounds.width <= MOBILE_VIEWPORT.width + 1);
+  assert(bounds.y + bounds.height <= MOBILE_VIEWPORT.height);
+
+  await collapseButton.click();
+  await page.locator('.canvas-column--compact').waitFor({ state: 'visible' });
+});
+
 test('compact canvas keeps overflow workspace visible around smaller preset', async (t) => {
   const overflowTextLayer = buildTextLayer({
     id: 'text-overflow',
@@ -1200,10 +1228,24 @@ test('fullscreen text editing opens inline editor and focuses textarea', async (
     activeTag: document.activeElement?.tagName ?? null,
     activeClass:
       document.activeElement instanceof HTMLElement ? document.activeElement.className : null,
+    selectionStart:
+      document.activeElement instanceof HTMLTextAreaElement
+        ? document.activeElement.selectionStart
+        : null,
+    selectionEnd:
+      document.activeElement instanceof HTMLTextAreaElement
+        ? document.activeElement.selectionEnd
+        : null,
+    valueLength:
+      document.activeElement instanceof HTMLTextAreaElement
+        ? document.activeElement.value.length
+        : null,
   }));
 
   assert.equal(focusState.activeTag, 'TEXTAREA');
   assert.equal(focusState.activeClass, 'text-inline-editor-input');
+  assert.equal(focusState.selectionStart, 0);
+  assert.equal(focusState.selectionEnd, focusState.valueLength);
 
   await editor.fill('Новый текст');
   const savedState = await readSavedState(page);

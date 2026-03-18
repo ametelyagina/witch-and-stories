@@ -1366,32 +1366,46 @@ function App() {
             isPhoneViewport && isCanvasExpanded ? ' canvas-column--expanded' : ''
           }`}
         >
-          <div className="canvas-toolbar">
-            {!isCanvasExpanded ? (
-              <div className="preset-strip" aria-label="Canvas presets">
-                {PRESETS.map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    className={preset === item.key ? 'active' : 'ghost'}
-                    onClick={() => handlePresetChange(item.key)}
-                  >
-                    {item.key === 'story' ? '9:16' : '4:5'}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+          {!isPhoneViewport || !isCanvasExpanded ? (
+            <div className="canvas-toolbar">
+              {!isCanvasExpanded ? (
+                <div className="preset-strip" aria-label="Canvas presets">
+                  {PRESETS.map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      className={preset === item.key ? 'active' : 'ghost'}
+                      onClick={() => handlePresetChange(item.key)}
+                    >
+                      {item.key === 'story' ? '9:16' : '4:5'}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
-            {isPhoneViewport ? (
+              {isPhoneViewport ? (
+                <button
+                  type="button"
+                  className={isCanvasExpanded ? 'secondary canvas-expand-button' : 'ghost canvas-expand-button'}
+                  onClick={() => setCanvasExpandedState(!isCanvasExpanded)}
+                >
+                  {isCanvasExpanded ? 'Свернуть' : 'Развернуть'}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {isPhoneViewport && isCanvasExpanded ? (
+            <div className="fullscreen-canvas-controls">
               <button
                 type="button"
-                className={isCanvasExpanded ? 'secondary canvas-expand-button' : 'ghost canvas-expand-button'}
-                onClick={() => setCanvasExpandedState(!isCanvasExpanded)}
+                className="secondary canvas-expand-button"
+                onClick={() => setCanvasExpandedState(false)}
               >
-                {isCanvasExpanded ? 'Свернуть' : 'Развернуть'}
+                Свернуть
               </button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
 
           <EditorCanvas
             containerRef={containerRef}

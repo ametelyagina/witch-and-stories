@@ -188,6 +188,7 @@ export function EditorCanvas({
 }: EditorCanvasProps) {
   const stageFrameRef = useRef<HTMLDivElement | null>(null);
   const textEditorRef = useRef<HTMLTextAreaElement | null>(null);
+  const lastAutoSelectedEditorIdRef = useRef<string | null>(null);
   const longPressTimerRef = useRef<number | null>(null);
   const longPressTriggeredRef = useRef(false);
   const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -262,7 +263,7 @@ export function EditorCanvas({
     );
   };
 
-  const focusInlineEditor = () => {
+  const focusInlineEditor = ({ selectAll = false }: { selectAll?: boolean } = {}) => {
     const textarea = textEditorRef.current;
     if (!textarea) {
       return;
@@ -270,6 +271,13 @@ export function EditorCanvas({
 
     textarea.focus({ preventScroll: true });
     const length = textarea.value.length;
+
+    if (selectAll) {
+      textarea.select();
+      textarea.setSelectionRange(0, length);
+      return;
+    }
+
     textarea.setSelectionRange(length, length);
   };
 
@@ -279,9 +287,25 @@ export function EditorCanvas({
     });
 
     requestAnimationFrame(() => {
-      focusInlineEditor();
+      focusInlineEditor({ selectAll: true });
     });
   };
+
+  useEffect(() => {
+    if (!selectedTextLayer || editingTextLayerId !== selectedTextLayer.id) {
+      lastAutoSelectedEditorIdRef.current = null;
+      return;
+    }
+
+    if (lastAutoSelectedEditorIdRef.current === selectedTextLayer.id) {
+      return;
+    }
+
+    lastAutoSelectedEditorIdRef.current = selectedTextLayer.id;
+    requestAnimationFrame(() => {
+      focusInlineEditor({ selectAll: true });
+    });
+  }, [editingTextLayerId, selectedTextLayer]);
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -935,11 +959,13 @@ export function EditorCanvas({
     }
 
     if (selectedTextLayer) {
+      const minimumInlineEditorWidth = isFullscreenCanvas ? 260 : 220;
+      const minimumInlineEditorHeight = isFullscreenCanvas ? 164 : 132;
       inlineEditorStyle = {
         left: `${(canvasOffsetX + selectedTextLayer.x) * visualScale + viewportPanX}px`,
         top: `${(canvasOffsetY + selectedTextLayer.y) * visualScale + viewportPanY}px`,
-        width: `${Math.max(selectedTextLayer.width * visualScale, 140)}px`,
-        height: `${Math.max(selectedTextLayer.height * visualScale, 88)}px`,
+        width: `${Math.max(selectedTextLayer.width * visualScale, minimumInlineEditorWidth)}px`,
+        height: `${Math.max(selectedTextLayer.height * visualScale, minimumInlineEditorHeight)}px`,
         transform: `rotate(${selectedTextLayer.rotation}deg)`,
       };
     }
@@ -1741,6 +1767,10 @@ export function EditorCanvas({
 
           {selectedTextLayer && isEditingSelectedText && inlineEditorStyle && !isMultiTouchActive ? (
             <div className="text-inline-editor" style={inlineEditorStyle}>
+              <div className="text-inline-editor-head">
+                <span className="text-inline-editor-badge">Редактирование</span>
+                <span className="text-inline-editor-tip">Текст уже выделен</span>
+              </div>
               <textarea
                 ref={textEditorRef}
                 className="text-inline-editor-input"
