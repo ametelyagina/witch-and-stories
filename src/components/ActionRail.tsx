@@ -56,6 +56,12 @@ export function ActionRail({
         label={hasBackgroundLayer ? 'Сменить фон' : 'Добавить фон'}
         onClick={onUploadImage}
       />
+      <ActionButton
+        className="ghost"
+        disabled={isRemoveBackgroundDisabled}
+        label="Убрать фон"
+        onClick={onRemoveBackground}
+      />
       <ActionButton className="ghost" label="Вставить" onClick={onPaste} />
       <ActionButton className="secondary" label="Добавить текст" onClick={onAddText} />
       <ActionButton className="ghost" label="Импорт шрифта" onClick={onUploadFont} />
@@ -64,12 +70,6 @@ export function ActionRail({
         disabled={isRecenterBackgroundDisabled}
         label="Фон в центр"
         onClick={onRecenterBackground}
-      />
-      <ActionButton
-        className="ghost"
-        disabled={isRemoveBackgroundDisabled}
-        label="Убрать фон"
-        onClick={onRemoveBackground}
       />
       <ActionButton className="danger" disabled={isDeleteDisabled} label="Удалить слой" onClick={onDeleteSelected} />
       <ActionButton className="export" disabled={isExportDisabled} label="Экспорт PNG" onClick={onExport} />
