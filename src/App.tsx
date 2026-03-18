@@ -626,7 +626,12 @@ function App() {
       crop: persistedBackground.crop,
     });
 
-    setLayers((prev) => [...prev, layer]);
+    setLayers((prev) => {
+      const withoutBackgroundLayers = prev.filter(
+        (currentLayer) => !(currentLayer.type === 'image' && currentLayer.kind === 'background'),
+      );
+      return [layer, ...withoutBackgroundLayers];
+    });
     setSelectedLayerId(null);
     setEditingTextLayerId(null);
     setIsTextToolsOpen(false);
@@ -647,6 +652,13 @@ function App() {
           rotation: 0,
         };
       }),
+    );
+    dismissSelectionUi();
+  };
+
+  const handleRemoveBackground = () => {
+    setLayers((prev) =>
+      prev.filter((layer) => !(layer.type === 'image' && layer.kind === 'background')),
     );
     dismissSelectionUi();
   };
@@ -1339,9 +1351,12 @@ function App() {
           onAddText={addTextLayer}
           onUploadFont={() => fontInputRef.current?.click()}
           onRecenterBackground={handleRecenterBackground}
+          onRemoveBackground={handleRemoveBackground}
           onDeleteSelected={removeSelectedLayer}
           onExport={handleExport}
+          hasBackgroundLayer={hasBackgroundLayer}
           isRecenterBackgroundDisabled={!hasBackgroundLayer}
+          isRemoveBackgroundDisabled={!hasBackgroundLayer}
           isDeleteDisabled={!selectedLayer}
           isExportDisabled={layers.length === 0}
         />

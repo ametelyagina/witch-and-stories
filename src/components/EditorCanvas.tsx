@@ -1782,7 +1782,7 @@ export function EditorCanvas({
         {!isCompactPreview && !isFullscreenCanvas ? (
           <p className="hint">
             {layers.length === 0
-              ? `Пустая канва ${width} x ${height}. Перетащите фото сюда, вставьте из буфера или нажмите “Загрузить фото”.`
+              ? `Пустая канва ${width} x ${height}. Перетащите фото сюда, вставьте из буфера или нажмите “Добавить фон”.`
               : selectedLayer?.type === 'image' && selectedLayer.kind === 'overlay'
                 ? `${width} x ${height} · ${Math.round(scale * 100)}% · стикер можно сразу тянуть за любое место, рамка и точки увеличены для пальца. Долгое удержание по канве откроет сохранение изображения.`
               : selectedLayer?.type === 'image' && dragArmedImageId === selectedLayer.id

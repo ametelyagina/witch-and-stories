@@ -1793,6 +1793,54 @@ test('uploaded background is persisted as prepared fit asset and survives reload
   assert.equal(savedState.layers[0].y, 150);
 });
 
+test('background controls replace the current background and can remove it', async (t) => {
+  const existingBackground = buildImageLayer({
+    id: 'background-old',
+    kind: 'background',
+    x: 0,
+    y: 0,
+    width: 1080,
+    height: 1920,
+    naturalWidth: 1080,
+    naturalHeight: 1920,
+  });
+  const replacementSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1500" viewBox="0 0 1000 1500">' +
+    '<rect width="1000" height="1500" fill="#c88763"/>' +
+    '<circle cx="500" cy="460" r="240" fill="#f7ecdf"/>' +
+    '</svg>';
+
+  const { context, page } = await openMobilePage({
+    state: buildState({
+      layers: [existingBackground],
+    }),
+  });
+  t.after(async () => context.close());
+
+  await page.getByRole('button', { name: /сменить фон/i }).click();
+  await page.locator('input[type="file"][accept="image/*"]').setInputFiles({
+    name: 'replacement-background.svg',
+    mimeType: 'image/svg+xml',
+    buffer: Buffer.from(replacementSvg),
+  });
+
+  await page.locator('.image-picker').waitFor({ state: 'visible' });
+  await page.getByRole('button', { name: /использовать фото/i }).click();
+  await waitForSavedLayerCount(page, 1);
+
+  let savedState = await readSavedState(page);
+  assert.equal(savedState.layers.length, 1);
+  assert.equal(savedState.layers[0].kind, 'background');
+  assert.notEqual(savedState.layers[0].src, existingBackground.src);
+
+  await page.getByRole('button', { name: /убрать фон/i }).click();
+  await waitForSavedLayerCount(page, 0);
+
+  savedState = await readSavedState(page);
+  assert.equal(savedState.layers.length, 0);
+  await page.getByRole('button', { name: /добавить фон/i }).waitFor();
+});
+
 test('background layer is locked and recenter button restores canonical position', async (t) => {
   const backgroundLayer = buildImageLayer({
     kind: 'background',
