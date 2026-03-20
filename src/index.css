@@ -452,6 +452,30 @@ input[type='color'] {
   justify-items: center;
 }
 
+.format-picker-trigger {
+  width: min(100%, 720px);
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+}
+
+.format-picker-trigger-button {
+  min-width: 220px;
+  min-height: 52px;
+  border-radius: 18px;
+  padding: 12px 18px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.format-picker-trigger-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .preset-strip {
   display: inline-grid;
   grid-template-columns: repeat(2, minmax(0, 180px));
@@ -601,6 +625,21 @@ input[type='color'] {
 
 .fullscreen-collage-scale-control input[type='range'] {
   width: min(280px, 100%);
+}
+
+.fullscreen-collage-swap-button {
+  width: 100%;
+  min-height: 42px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.fullscreen-collage-swap-copy {
+  margin: 0;
+  color: rgb(255 248 240 / 72%);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .canvas-shell {
@@ -1290,6 +1329,146 @@ canvas {
   box-shadow: 0 24px 60px rgb(16 12 9 / 36%);
 }
 
+.format-picker {
+  width: min(94vw, 860px);
+  max-height: min(92vh, 920px);
+  border-radius: 28px;
+  border: 1px solid rgb(255 233 217 / 16%);
+  background:
+    radial-gradient(circle at top, rgb(240 151 104 / 15%), transparent 24%),
+    linear-gradient(180deg, #281f1a, #17120f);
+  color: #fff6ef;
+  padding: 20px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 16px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgb(16 12 9 / 36%);
+}
+
+.format-picker-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.format-picker h2 {
+  margin: 0;
+  font-size: 28px;
+  font-family: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', serif;
+}
+
+.format-picker p {
+  color: rgb(255 239 228 / 72%);
+}
+
+.format-picker-close {
+  flex-shrink: 0;
+}
+
+.format-picker-layout {
+  display: grid;
+  gap: 14px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.format-picker-section {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 22px;
+  border: 1px solid rgb(255 233 217 / 12%);
+  background: rgb(255 248 240 / 5%);
+}
+
+.format-picker-section-head h3 {
+  margin: 0;
+  font-size: 20px;
+  color: #fff6ef;
+}
+
+.format-picker-section-head p {
+  margin: 4px 0 0;
+}
+
+.format-picker-segment {
+  display: inline-grid;
+  grid-template-columns: repeat(2, minmax(0, 180px));
+  gap: 10px;
+}
+
+.format-picker-segment button {
+  min-height: 54px;
+  border-radius: 18px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.format-picker-layout-list {
+  display: grid;
+  gap: 10px;
+  max-height: 280px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.format-picker-layout-button {
+  min-height: 92px;
+  padding: 14px;
+  border-radius: 20px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  text-align: left;
+}
+
+.format-picker-layout-button strong {
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.format-picker-layout-button small {
+  font-size: 12px;
+  line-height: 1.35;
+  color: inherit;
+  opacity: 0.82;
+}
+
+.format-picker-spacing-control {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 20px;
+  border: 1px solid rgb(255 233 217 / 12%);
+  background: rgb(255 248 240 / 6%);
+}
+
+.format-picker-spacing-head,
+.format-picker-spacing-scale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.format-picker-spacing-head span {
+  font-size: 13px;
+  font-weight: 700;
+  color: rgb(255 239 228 / 72%);
+}
+
+.format-picker-spacing-head strong {
+  font-size: 13px;
+  color: #fff6ef;
+}
+
+.format-picker-spacing-scale {
+  font-size: 11px;
+  color: rgb(255 239 228 / 64%);
+}
+
 .symbol-picker-head {
   display: flex;
   align-items: flex-start;
@@ -1631,6 +1810,14 @@ canvas {
     justify-items: stretch;
   }
 
+  .format-picker-trigger {
+    width: 100%;
+  }
+
+  .format-picker-trigger-button {
+    width: 100%;
+  }
+
   .canvas-toolbar .preset-strip,
   .canvas-toolbar .composition-strip,
   .canvas-toolbar .collage-layout-strip,
@@ -1823,6 +2010,16 @@ canvas {
     padding: 14px;
     overflow: hidden;
     grid-template-rows: auto minmax(0, 1fr) auto;
+  }
+
+  .format-picker {
+    width: 100%;
+    max-height: calc(100vh - 24px);
+    padding: 14px;
+  }
+
+  .format-picker-segment {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .symbol-picker {

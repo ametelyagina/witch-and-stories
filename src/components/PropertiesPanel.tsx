@@ -25,6 +25,8 @@ type PropertiesPanelProps = {
   onChange: (id: string, changes: Partial<Layer>) => void;
   collageScale: number | null;
   onCollageScaleChange: (nextScale: number) => void;
+  isCollageSwapMode: boolean;
+  onToggleCollageSwap: () => void;
   onTextChange: (id: string, value: string) => void;
   fonts: UploadedFont[];
   textStylePresets: TextStylePreset[];
@@ -42,6 +44,8 @@ export function PropertiesPanel({
   onChange,
   collageScale,
   onCollageScaleChange,
+  isCollageSwapMode,
+  onToggleCollageSwap,
   onTextChange,
   fonts,
   textStylePresets,
@@ -201,9 +205,21 @@ export function PropertiesPanel({
                   />
                 </div>
 
+                <button
+                  type="button"
+                  className={isCollageSwapMode ? 'active panel-inline-button' : 'ghost panel-inline-button'}
+                  onClick={onToggleCollageSwap}
+                >
+                  {isCollageSwapMode ? 'Отменить обмен' : 'Поменять местами'}
+                </button>
+
                 <div className="sidebar-empty">
                   <strong>Коллаж держится по сетке</strong>
-                  <p>Потяните фото на канве, чтобы сдвинуть кадр внутри ячейки, а здесь можно его приблизить или отдалить.</p>
+                  <p>
+                    {isCollageSwapMode
+                      ? 'Теперь нажми на другую фотку в коллаже, и мы сразу поменяем их местами.'
+                      : 'Потяните фото на канве, чтобы сдвинуть кадр внутри ячейки, а здесь можно его приблизить, отдалить или включить обмен местами.'}
+                  </p>
                 </div>
               </>
             ) : (

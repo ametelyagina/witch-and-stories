@@ -101,12 +101,7 @@ const buildHeroStripSlots = (
   const contentHeight = height - outer * 2 - gap;
   const heroHeight = contentHeight * 0.72;
   const stripHeight = contentHeight - heroHeight;
-  const sideWeight = 1;
-  const centerWeight = 1.35;
-  const totalWeight = sideWeight * 2 + centerWeight;
-  const stripUnit = (contentWidth - gap * 2) / totalWeight;
-  const sideWidth = stripUnit * sideWeight;
-  const centerWidth = stripUnit * centerWeight;
+  const stripSlotWidth = (contentWidth - gap * 2) / 3;
   const heroY = heroOnTop ? outer : outer + stripHeight + gap;
   const stripY = heroOnTop ? outer + heroHeight + gap : outer;
 
@@ -124,23 +119,23 @@ const buildHeroStripSlots = (
       label: 'Фото 2',
       x: outer,
       y: stripY,
-      width: sideWidth,
+      width: stripSlotWidth,
       height: stripHeight,
     },
     {
       id: 'slot-3',
       label: 'Фото 3',
-      x: outer + sideWidth + gap,
+      x: outer + stripSlotWidth + gap,
       y: stripY,
-      width: centerWidth,
+      width: stripSlotWidth,
       height: stripHeight,
     },
     {
       id: 'slot-4',
       label: 'Фото 4',
-      x: outer + sideWidth + gap + centerWidth + gap,
+      x: outer + (stripSlotWidth + gap) * 2,
       y: stripY,
-      width: sideWidth,
+      width: stripSlotWidth,
       height: stripHeight,
     },
   ];
