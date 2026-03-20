@@ -234,6 +234,7 @@ export function EditorCanvas({
   const collageFilledSlotIds = new Set(filledCollageSlotIds);
   const isCollageSpacingless = compositionMode === 'collage' && collageSpacing === 0;
   const [selectionMetrics, setSelectionMetrics] = useState<SelectionMetrics | null>(null);
+  const [isSelectionColorPicking, setIsSelectionColorPicking] = useState(false);
   const visualScale = isFullscreenCanvas ? scale * fullscreenZoom : scale;
   const viewportPanX = isFullscreenCanvas ? fullscreenPan.x : 0;
   const viewportPanY = isFullscreenCanvas ? fullscreenPan.y : 0;
@@ -305,6 +306,14 @@ export function EditorCanvas({
     });
   };
 
+  const handleStartSelectionColorPicking = () => {
+    setIsSelectionColorPicking(true);
+  };
+
+  const handleFinishSelectionColorPicking = () => {
+    setIsSelectionColorPicking(false);
+  };
+
   useEffect(() => {
     if (!selectedTextLayer || editingTextLayerId !== selectedTextLayer.id) {
       lastAutoSelectedEditorIdRef.current = null;
@@ -320,6 +329,37 @@ export function EditorCanvas({
       focusInlineEditor({ selectAll: true });
     });
   }, [editingTextLayerId, selectedTextLayer]);
+
+  useEffect(() => {
+    if (!isSelectionColorPicking) {
+      return;
+    }
+
+    const handleWindowFocus = () => {
+      window.setTimeout(() => {
+        setIsSelectionColorPicking(false);
+      }, 0);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsSelectionColorPicking(false);
+      }
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isSelectionColorPicking]);
+
+  useEffect(() => {
+    if (!selectedTextLayer || !isTextToolsOpen) {
+      setIsSelectionColorPicking(false);
+    }
+  }, [isTextToolsOpen, selectedTextLayer]);
 
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -913,6 +953,14 @@ export function EditorCanvas({
   let selectionPopoverStyle: CSSProperties | undefined;
   let inlineEditorStyle: CSSProperties | undefined;
   const estimatedPopoverHeight = 520;
+  const frameOffsetLeft = stageFrameRef.current?.offsetLeft ?? 0;
+  const frameOffsetTop = stageFrameRef.current?.offsetTop ?? 0;
+  const overlayEdgeInset = 8;
+  const toolbarOffset = 10;
+  const popoverOffset = 10;
+  const fullscreenOverlaySafeTop = isFullscreenCanvas ? 84 : 8;
+  const shouldHideSelectionUiForColorPicking =
+    selectedTextLayer !== null && isTextToolsOpen && isSelectionColorPicking;
 
   if (selectedCanvasLayer) {
     const resolvedSelectionMetrics = selectionMetrics ?? readSelectionMetrics(selectedCanvasLayer);
@@ -920,34 +968,45 @@ export function EditorCanvas({
       const toolbarButtonCount = selectedTextLayer ? 4 : 2;
       const toolbarWidth = toolbarButtonCount * 30 + (toolbarButtonCount - 1) * 4;
       const toolbarHeight = 30;
-      const popoverWidth = Math.min(228, frameWidth - 12);
+      const popoverWidth = Math.min(228, frameWidth - overlayEdgeInset * 2);
       const selectionTop = resolvedSelectionMetrics.top;
       const selectionRight = resolvedSelectionMetrics.right;
       const selectionBottom = resolvedSelectionMetrics.bottom;
-      const toolbarLeft = clampToFrame(
-        selectionRight - toolbarWidth + 10,
-        6,
-        Math.max(6, frameWidth - toolbarWidth - 6),
+      const toolbarLeftLocal = clampToFrame(
+        selectionRight - toolbarWidth,
+        overlayEdgeInset,
+        Math.max(overlayEdgeInset, frameWidth - toolbarWidth - overlayEdgeInset),
       );
-      const toolbarTop = clampToFrame(
-        selectionTop - 12,
-        6,
-        Math.max(6, frameHeight - toolbarHeight - 6),
+      const toolbarPreferredTop = selectionTop - toolbarHeight - toolbarOffset;
+      const toolbarFallbackTop = selectionBottom + toolbarOffset;
+      const toolbarTopLocal =
+        toolbarPreferredTop >= fullscreenOverlaySafeTop
+          ? toolbarPreferredTop
+          : clampToFrame(
+              toolbarFallbackTop,
+              fullscreenOverlaySafeTop,
+              Math.max(fullscreenOverlaySafeTop, frameHeight - toolbarHeight - overlayEdgeInset),
+            );
+      const popoverLeftLocal = clampToFrame(
+        Math.min(selectionRight - popoverWidth, toolbarLeftLocal + toolbarWidth - popoverWidth),
+        overlayEdgeInset,
+        Math.max(overlayEdgeInset, frameWidth - popoverWidth - overlayEdgeInset),
       );
-      const popoverLeft = clampToFrame(
-        selectionRight - popoverWidth,
-        8,
-        Math.max(8, frameWidth - popoverWidth - 8),
+      const popoverBelowTop = toolbarTopLocal + toolbarHeight + popoverOffset;
+      const popoverAboveTop = Math.min(
+        toolbarTopLocal - estimatedPopoverHeight - popoverOffset,
+        selectionTop - estimatedPopoverHeight - popoverOffset,
       );
-      const popoverBelowTop = selectionBottom + 12;
-      const popoverAboveTop = selectionTop - estimatedPopoverHeight - 12;
-      const minPopoverTop = 8;
-      const maxPopoverTop = Math.max(8, frameHeight - estimatedPopoverHeight - 8);
-      const canPlaceBelow = popoverBelowTop + estimatedPopoverHeight <= frameHeight - 8;
-      const canPlaceAbove = popoverAboveTop >= 8;
-      const popoverTop =
+      const minPopoverTop = fullscreenOverlaySafeTop;
+      const maxPopoverTop = Math.max(
+        fullscreenOverlaySafeTop,
+        frameHeight - estimatedPopoverHeight - overlayEdgeInset,
+      );
+      const canPlaceBelow = popoverBelowTop + estimatedPopoverHeight <= frameHeight - overlayEdgeInset;
+      const canPlaceAbove = popoverAboveTop >= fullscreenOverlaySafeTop;
+      const popoverTopLocal =
         isCompactPreview && !isFullscreenCanvas
-          ? selectionTop < frameHeight / 2
+          ? selectionTop + selectionBottom < frameHeight
             ? popoverBelowTop
             : popoverAboveTop
           : canPlaceBelow
@@ -955,19 +1014,19 @@ export function EditorCanvas({
             : canPlaceAbove
               ? popoverAboveTop
               : clampToFrame(
-                  selectionBottom + 12,
+                  selectionTop + (selectionBottom - selectionTop) / 2 - estimatedPopoverHeight / 2,
                   minPopoverTop,
                   maxPopoverTop,
                 );
 
       selectionToolbarStyle = {
-        left: `${toolbarLeft}px`,
-        top: `${toolbarTop}px`,
+        left: `${frameOffsetLeft + toolbarLeftLocal}px`,
+        top: `${frameOffsetTop + toolbarTopLocal}px`,
       };
 
       selectionPopoverStyle = {
-        left: `${popoverLeft}px`,
-        top: `${popoverTop}px`,
+        left: `${frameOffsetLeft + popoverLeftLocal}px`,
+        top: `${frameOffsetTop + popoverTopLocal}px`,
         width: `${popoverWidth}px`,
       };
     }
@@ -995,8 +1054,8 @@ export function EditorCanvas({
       );
 
       inlineEditorStyle = {
-        left: `${inlineEditorLeft}px`,
-        top: `${inlineEditorTop}px`,
+        left: `${frameOffsetLeft + inlineEditorLeft}px`,
+        top: `${frameOffsetTop + inlineEditorTop}px`,
         width: `${inlineEditorWidth}px`,
         height: `${inlineEditorHeight}px`,
         transform: `rotate(${selectedTextLayer.rotation}deg)`,
@@ -1701,7 +1760,12 @@ export function EditorCanvas({
 
           {selectedCanvasLayer && selectionToolbarStyle && !isEditingSelectedText && !isMultiTouchActive && !isSelectedCollageLayer ? (
             <>
-              <div className="text-selection-toolbar" style={selectionToolbarStyle}>
+              <div
+                className={`text-selection-toolbar${
+                  shouldHideSelectionUiForColorPicking ? ' text-selection-toolbar--hidden' : ''
+                }`}
+                style={selectionToolbarStyle}
+              >
                 <button
                   type="button"
                   className="text-selection-button"
@@ -1743,7 +1807,12 @@ export function EditorCanvas({
               </div>
 
               {selectedTextLayer && isTextToolsOpen && selectionPopoverStyle && !isMultiTouchActive ? (
-                <div className="text-selection-popover" style={selectionPopoverStyle}>
+                <div
+                  className={`text-selection-popover${
+                    shouldHideSelectionUiForColorPicking ? ' text-selection-popover--hidden' : ''
+                  }`}
+                  style={selectionPopoverStyle}
+                >
                   <button
                     type="button"
                     className="secondary text-selection-edit-button"
@@ -1823,11 +1892,17 @@ export function EditorCanvas({
                         type="color"
                         value={selectedTextLayer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR}
                         disabled={!selectedTextLayer.backgroundEnabled}
+                        onClick={handleStartSelectionColorPicking}
+                        onFocus={handleStartSelectionColorPicking}
                         onChange={(event) =>
-                          onQuickTextStyleChange({
-                            backgroundColor: event.target.value,
-                          })
+                          {
+                            onQuickTextStyleChange({
+                              backgroundColor: event.target.value,
+                            });
+                            handleFinishSelectionColorPicking();
+                          }
                         }
+                        onBlur={handleFinishSelectionColorPicking}
                       />
                     </div>
                   </div>
@@ -1921,11 +1996,17 @@ export function EditorCanvas({
                     <input
                       type="color"
                       value={selectedTextLayer.color}
+                      onClick={handleStartSelectionColorPicking}
+                      onFocus={handleStartSelectionColorPicking}
                       onChange={(event) =>
-                        onQuickTextStyleChange({
-                          color: event.target.value,
-                        })
+                        {
+                          onQuickTextStyleChange({
+                            color: event.target.value,
+                          });
+                          handleFinishSelectionColorPicking();
+                        }
                       }
+                      onBlur={handleFinishSelectionColorPicking}
                     />
                   </label>
                 </div>
