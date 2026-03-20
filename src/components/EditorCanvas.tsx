@@ -712,6 +712,10 @@ export function EditorCanvas({
 
   useEffect(() => {
     const handleSystemBoundary = () => {
+      if (isPreparingSavePreview || isSavePreviewOpen) {
+        return;
+      }
+
       resetTransientInteractionState({
         restoreSelectedLayer: true,
       });
@@ -732,7 +736,7 @@ export function EditorCanvas({
       window.removeEventListener('pageshow', handleSystemBoundary);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [selectedCanvasLayer]);
+  }, [isPreparingSavePreview, isSavePreviewOpen, selectedCanvasLayer]);
 
   useEffect(() => {
     if (!isPreparingSavePreview && !isSavePreviewOpen) {

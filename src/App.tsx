@@ -1505,6 +1505,10 @@ function App() {
 
   useEffect(() => {
     const resetTransientEditorUi = () => {
+      if (savePreviewDataUrl) {
+        return;
+      }
+
       setIsPreparingSavePreview(false);
       setDragArmedImageId(null);
       setIsTextToolsOpen(false);
@@ -1526,7 +1530,7 @@ function App() {
       window.removeEventListener('pageshow', resetTransientEditorUi);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, []);
+  }, [savePreviewDataUrl]);
 
   const handleRequestSavePreview = async () => {
     const stage = stageRef.current;
@@ -2496,6 +2500,8 @@ function App() {
               src={savePreviewDataUrl}
               alt="Готовое изображение для сохранения"
               className="save-preview-image"
+              draggable={false}
+              onDragStart={(event) => event.preventDefault()}
             />
           </div>
         </div>
