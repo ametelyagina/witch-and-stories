@@ -21,7 +21,9 @@ import { CollageSlot } from '../editor/collage';
 import {
   buildTextHighlightBlock,
   buildTextHighlightRects,
+  clampTextBackgroundOpacity,
   DEFAULT_TEXT_BACKGROUND_COLOR,
+  DEFAULT_TEXT_BACKGROUND_OPACITY,
   DEFAULT_TEXT_BACKGROUND_STYLE,
   TEXT_BACKGROUND_STYLE_OPTIONS,
   withAlpha,
@@ -201,6 +203,7 @@ type EditorCanvasProps = {
     backgroundEnabled?: boolean;
     backgroundColor?: string;
     backgroundStyle?: TextBackgroundStyle;
+    backgroundOpacity?: number;
   }) => void;
   onMoveSelectedLayerToEdge: (edge: 'back' | 'front') => void;
   canSendSelectedLayerToBack: boolean;
@@ -1633,6 +1636,7 @@ export function EditorCanvas({
       {buildTextHighlightRects(layer).map((rect, index) => {
         const backgroundStyle = layer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE;
         const backgroundColor = layer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR;
+        const backgroundOpacity = clampTextBackgroundOpacity(layer.backgroundOpacity);
         const blockRect =
           backgroundStyle === 'block' || backgroundStyle === 'frame'
             ? buildTextHighlightBlock(layer)
@@ -1647,7 +1651,10 @@ export function EditorCanvas({
                 width={Math.max(24, blockRect.width - (backgroundStyle === 'frame' ? 12 : 10))}
                 height={Math.max(24, blockRect.height - (backgroundStyle === 'frame' ? 12 : 10))}
                 cornerRadius={Math.max(14, blockRect.cornerRadius - 6)}
-                fill={withAlpha(backgroundColor, backgroundStyle === 'frame' ? 0.24 : 0.34)}
+                fill={withAlpha(
+                  backgroundColor,
+                  (backgroundStyle === 'frame' ? 0.24 : 0.34) * backgroundOpacity,
+                )}
               />
               <Rect
                 x={blockRect.x}
@@ -1655,10 +1662,10 @@ export function EditorCanvas({
                 width={blockRect.width}
                 height={blockRect.height}
                 cornerRadius={blockRect.cornerRadius}
-                fill={backgroundColor}
+                fill={withAlpha(backgroundColor, backgroundOpacity)}
                 shadowColor={withAlpha(backgroundColor, 0.34)}
                 shadowBlur={backgroundStyle === 'frame' ? 14 : 18}
-                shadowOpacity={backgroundStyle === 'frame' ? 0.2 : 0.24}
+                shadowOpacity={(backgroundStyle === 'frame' ? 0.2 : 0.24) * backgroundOpacity}
               />
               {backgroundStyle === 'frame' ? (
                 <Rect
@@ -1667,8 +1674,8 @@ export function EditorCanvas({
                   width={Math.max(12, blockRect.width - 16)}
                   height={Math.max(12, blockRect.height - 16)}
                   cornerRadius={Math.max(12, blockRect.cornerRadius - 8)}
-                  fill={withAlpha(backgroundColor, 0.12)}
-                  stroke="rgba(255, 248, 240, 0.74)"
+                  fill={withAlpha(backgroundColor, 0.12 * backgroundOpacity)}
+                  stroke={withAlpha('#fff8f0', 0.74 * backgroundOpacity)}
                   strokeWidth={1.5}
                 />
               ) : null}
@@ -1689,7 +1696,7 @@ export function EditorCanvas({
                 width={rect.width + 8}
                 height={rect.height + 6}
                 cornerRadius={rect.cornerRadius + 8}
-                fill={withAlpha(backgroundColor, 0.22)}
+                fill={withAlpha(backgroundColor, 0.22 * backgroundOpacity)}
               />
               <Rect
                 x={rect.x}
@@ -1697,10 +1704,10 @@ export function EditorCanvas({
                 width={rect.width}
                 height={rect.height}
                 cornerRadius={rect.cornerRadius}
-                fill={backgroundColor}
+                fill={withAlpha(backgroundColor, backgroundOpacity)}
                 shadowColor={withAlpha(backgroundColor, 0.34)}
                 shadowBlur={14}
-                shadowOpacity={0.26}
+                shadowOpacity={0.26 * backgroundOpacity}
               />
             </Group>
           );
@@ -1717,7 +1724,7 @@ export function EditorCanvas({
                 width={rect.width}
                 height={rect.height}
                 cornerRadius={Math.max(14, rect.cornerRadius - 2)}
-                fill={withAlpha(backgroundColor, 0.3)}
+                fill={withAlpha(backgroundColor, 0.3 * backgroundOpacity)}
               />
               <Rect
                 x={rect.x}
@@ -1725,10 +1732,10 @@ export function EditorCanvas({
                 width={rect.width}
                 height={rect.height}
                 cornerRadius={rect.cornerRadius}
-                fill={backgroundColor}
+                fill={withAlpha(backgroundColor, backgroundOpacity)}
                 shadowColor={withAlpha(backgroundColor, 0.28)}
                 shadowBlur={10}
-                shadowOpacity={0.2}
+                shadowOpacity={0.2 * backgroundOpacity}
               />
               <Rect
                 x={rect.x + 6}
@@ -1736,7 +1743,7 @@ export function EditorCanvas({
                 width={Math.max(12, rect.width - 12)}
                 height={Math.max(12, rect.height - 10)}
                 cornerRadius={Math.max(12, rect.cornerRadius - 6)}
-                fill={withAlpha('#fff8f0', 0.12)}
+                fill={withAlpha('#fff8f0', 0.12 * backgroundOpacity)}
               />
             </Group>
           );
@@ -1750,10 +1757,10 @@ export function EditorCanvas({
             width={rect.width}
             height={rect.height}
             cornerRadius={rect.cornerRadius}
-            fill={backgroundColor}
+            fill={withAlpha(backgroundColor, backgroundOpacity)}
             shadowColor={backgroundStyle === 'soft' ? withAlpha(backgroundColor, 0.3) : undefined}
             shadowBlur={backgroundStyle === 'soft' ? 10 : 0}
-            shadowOpacity={backgroundStyle === 'soft' ? 0.24 : 0}
+            shadowOpacity={backgroundStyle === 'soft' ? 0.24 * backgroundOpacity : 0}
             listening={false}
           />
         );
@@ -2024,6 +2031,8 @@ export function EditorCanvas({
                               selectedTextLayer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
                             backgroundStyle:
                               selectedTextLayer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE,
+                            backgroundOpacity:
+                              selectedTextLayer.backgroundOpacity ?? DEFAULT_TEXT_BACKGROUND_OPACITY,
                           })
                         }
                       >
@@ -2046,6 +2055,30 @@ export function EditorCanvas({
                         onBlur={handleFinishSelectionColorPicking}
                       />
                     </div>
+                    <div className="text-selection-range-head">
+                      <span>Прозрачность</span>
+                      <strong>
+                        {Math.round(
+                          (1 - clampTextBackgroundOpacity(selectedTextLayer.backgroundOpacity)) * 100,
+                        )}
+                        %
+                      </strong>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      disabled={!selectedTextLayer.backgroundEnabled}
+                      value={Math.round(
+                        (1 - clampTextBackgroundOpacity(selectedTextLayer.backgroundOpacity)) * 100,
+                      )}
+                      onChange={(event) =>
+                        onQuickTextStyleChange({
+                          backgroundOpacity: 1 - Number(event.target.value) / 100,
+                        })
+                      }
+                    />
                   </div>
 
                   <div className="text-selection-field">

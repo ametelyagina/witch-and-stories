@@ -2,6 +2,7 @@ import { TextAlign, TextBackgroundStyle, TextFontStyle, TextLayer } from './type
 
 export const DEFAULT_TEXT_BACKGROUND_COLOR = '#fff3e8';
 export const DEFAULT_TEXT_BACKGROUND_STYLE: TextBackgroundStyle = 'soft';
+export const DEFAULT_TEXT_BACKGROUND_OPACITY = 1;
 export const TEXT_BACKGROUND_STYLE_OPTIONS: Array<{
   id: TextBackgroundStyle;
   label: string;
@@ -31,6 +32,14 @@ export type TextHighlightRect = {
 
 export type TextHighlightBlock = TextHighlightRect;
 
+export function clampTextBackgroundOpacity(value: number | undefined) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_TEXT_BACKGROUND_OPACITY;
+  }
+
+  return Math.min(Math.max(value, 0), 1);
+}
+
 export function withAlpha(color: string, alpha: number) {
   const normalized = color.trim();
   const hex = normalized.startsWith('#') ? normalized.slice(1) : normalized;
@@ -50,6 +59,10 @@ export function withAlpha(color: string, alpha: number) {
   const blue = Number.parseInt(expanded.slice(4, 6), 16);
 
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+}
+
+export function getTextBackgroundOpacity(layer: Pick<TextLayer, 'backgroundOpacity'>) {
+  return clampTextBackgroundOpacity(layer.backgroundOpacity);
 }
 
 let measureCanvas: HTMLCanvasElement | null = null;

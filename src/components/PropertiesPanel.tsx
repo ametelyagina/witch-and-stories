@@ -3,7 +3,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { FontPicker } from './FontPicker';
 import { Layer, TextLayer, UploadedFont } from '../editor/types';
 import {
+  clampTextBackgroundOpacity,
   DEFAULT_TEXT_BACKGROUND_COLOR,
+  DEFAULT_TEXT_BACKGROUND_OPACITY,
   DEFAULT_TEXT_BACKGROUND_STYLE,
   TEXT_BACKGROUND_STYLE_OPTIONS,
 } from '../editor/textHighlight';
@@ -290,6 +292,7 @@ export function PropertiesPanel({
                             backgroundEnabled: preset.backgroundEnabled,
                             backgroundColor: preset.backgroundColor,
                             backgroundStyle: preset.backgroundStyle,
+                            backgroundOpacity: preset.backgroundOpacity,
                           })
                         }
                       >
@@ -452,6 +455,8 @@ export function PropertiesPanel({
                               selectedLayer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
                             backgroundStyle:
                               selectedLayer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE,
+                            backgroundOpacity:
+                              selectedLayer.backgroundOpacity ?? DEFAULT_TEXT_BACKGROUND_OPACITY,
                           })
                         }
                       >
@@ -474,6 +479,33 @@ export function PropertiesPanel({
                         }
                       />
                     </div>
+                  </div>
+
+                  <div className="field">
+                    <div className="field-head">
+                      <label>Прозрачность плашки</label>
+                      <span>
+                        {Math.round(
+                          (1 - clampTextBackgroundOpacity(selectedLayer.backgroundOpacity)) * 100,
+                        )}
+                        %
+                      </span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      disabled={!selectedLayer.backgroundEnabled}
+                      value={Math.round(
+                        (1 - clampTextBackgroundOpacity(selectedLayer.backgroundOpacity)) * 100,
+                      )}
+                      onChange={(event) =>
+                        applyTextChanges(selectedLayer, {
+                          backgroundOpacity: 1 - Number(event.target.value) / 100,
+                        })
+                      }
+                    />
                   </div>
 
                   <div className="field">

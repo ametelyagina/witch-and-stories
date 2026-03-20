@@ -46,7 +46,11 @@ import {
   remapCollageGeometry,
   scaleCollageGeometry,
 } from './editor/collage';
-import { DEFAULT_TEXT_BACKGROUND_COLOR, DEFAULT_TEXT_BACKGROUND_STYLE } from './editor/textHighlight';
+import {
+  DEFAULT_TEXT_BACKGROUND_COLOR,
+  DEFAULT_TEXT_BACKGROUND_OPACITY,
+  DEFAULT_TEXT_BACKGROUND_STYLE,
+} from './editor/textHighlight';
 import {
   createCustomTextStylePreset,
   DEFAULT_TEXT_STYLE_PRESET_ID,
@@ -104,6 +108,7 @@ function App() {
     height: typeof window === 'undefined' ? 900 : window.innerHeight,
   }));
   const [isFormatPickerOpen, setIsFormatPickerOpen] = useState(false);
+  const [isCollageFramePickerOpen, setIsCollageFramePickerOpen] = useState(false);
   const [draftPreset, setDraftPreset] = useState<Preset>('story');
   const [draftCompositionMode, setDraftCompositionMode] = useState<CompositionMode>('single');
   const [draftCollageLayout, setDraftCollageLayout] = useState<CollageLayout>('grid-4');
@@ -640,6 +645,12 @@ function App() {
     dismissSelectionUi();
   }, [selectedLayer]);
 
+  useEffect(() => {
+    if (compositionMode !== 'collage' || isCanvasExpanded) {
+      setIsCollageFramePickerOpen(false);
+    }
+  }, [compositionMode, isCanvasExpanded]);
+
   const handleCanvasMouseDown = (event: Konva.KonvaEventObject<MouseEvent>) => {
     if (event.target === event.target.getStage()) {
       dismissSelectionUi();
@@ -741,6 +752,7 @@ function App() {
     backgroundEnabled?: boolean;
     backgroundColor?: string;
     backgroundStyle?: TextBackgroundStyle;
+    backgroundOpacity?: number;
   }) => {
     if (selectedLayer?.type !== 'text') {
       return;
@@ -1194,6 +1206,7 @@ function App() {
       backgroundEnabled?: boolean;
       backgroundColor?: string;
       backgroundStyle?: TextBackgroundStyle;
+      backgroundOpacity?: number;
       stylePresetId?: string;
       x?: number;
       y?: number;
@@ -1217,6 +1230,10 @@ function App() {
       backgroundEnabled: options.backgroundEnabled ?? false,
       backgroundColor: options.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
       backgroundStyle: options.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE,
+      backgroundOpacity:
+        options.backgroundOpacity ??
+        defaultTextPreset?.backgroundOpacity ??
+        DEFAULT_TEXT_BACKGROUND_OPACITY,
       stylePresetId:
         options.stylePresetId ?? (Object.keys(options).length === 0 ? defaultTextPreset?.id : undefined),
       x: options.x ?? stageSize.width * 0.08,
@@ -2175,6 +2192,9 @@ function App() {
     collageSpacing === 0 ? 'Без рамки' : `${collageSpacing}px`;
   const collageCornerRadiusLabel =
     collageCornerRadius === 0 ? 'Прямые углы' : `${collageCornerRadius}px`;
+  const collageFrameSummary = `${collageFrameLabel} · ${
+    collageDividersEnabled ? 'Перегородки вкл' : 'Перегородки выкл'
+  } · ${collageCornerRadiusLabel}`;
   const collageSwapButtonLabel =
     isCollageSwapMode ? 'Отменить обмен' : 'Поменять местами';
   const collageSwapHelpText = isCollageSwapMode
@@ -2287,58 +2307,76 @@ function App() {
                   </div>
 
                   {compositionMode === 'collage' ? (
-                    <div
-                      className={`collage-spacing-inline-control${
-                        collageSpacing > 0 ? ' collage-spacing-inline-control--enabled' : ''
-                      }`}
-                    >
-                      <div className="collage-spacing-inline-head">
-                        <div className="collage-spacing-inline-copy">
-                          <span>Рамка коллажа</span>
-                          <strong>{collageFrameLabel}</strong>
-                          <small>Ползунок меняет толщину рамки, а перегородки внутри можно включать отдельно.</small>
-                        </div>
-                        <label className="collage-spacing-inline-toggle">
+                    <div className="collage-frame-trigger">
+                      <button
+                        type="button"
+                        className={`secondary collage-frame-trigger-button${
+                          isCollageFramePickerOpen ? ' collage-frame-trigger-button--open' : ''
+                        }`}
+                        onClick={() => setIsCollageFramePickerOpen((current) => !current)}
+                        aria-expanded={isCollageFramePickerOpen}
+                        aria-controls="collage-frame-panel"
+                      >
+                        Выбрать рамку
+                      </button>
+                      <p className="collage-frame-trigger-summary">{collageFrameSummary}</p>
+
+                      {isCollageFramePickerOpen ? (
+                        <div
+                          id="collage-frame-panel"
+                          className={`collage-spacing-inline-control${
+                            collageSpacing > 0 ? ' collage-spacing-inline-control--enabled' : ''
+                          }`}
+                        >
+                          <div className="collage-spacing-inline-head">
+                            <div className="collage-spacing-inline-copy">
+                              <span>Рамка коллажа</span>
+                              <strong>{collageFrameLabel}</strong>
+                              <small>Ползунок меняет толщину рамки, а перегородки внутри можно включать отдельно.</small>
+                            </div>
+                            <label className="collage-spacing-inline-toggle">
+                              <input
+                                type="checkbox"
+                                checked={collageDividersEnabled}
+                                onChange={(event) => handleToggleCollageDividers(event.target.checked)}
+                                aria-label={collageDividersEnabled ? 'Убрать перегородки между фото' : 'Добавить перегородки между фото'}
+                              />
+                              <span>{collageDividersEnabled ? 'Убрать перегородки' : 'Добавить перегородки'}</span>
+                            </label>
+                          </div>
                           <input
-                            type="checkbox"
-                            checked={collageDividersEnabled}
-                            onChange={(event) => handleToggleCollageDividers(event.target.checked)}
-                            aria-label={collageDividersEnabled ? 'Убрать перегородки между фото' : 'Добавить перегородки между фото'}
+                            type="range"
+                            min={COLLAGE_MIN_SPACING}
+                            max={COLLAGE_MAX_SPACING}
+                            value={collageSpacing}
+                            onChange={(event) => handleCollageSpacingChange(Number(event.target.value))}
+                            aria-label="Ширина рамки коллажа"
                           />
-                          <span>{collageDividersEnabled ? 'Убрать перегородки' : 'Добавить перегородки'}</span>
-                        </label>
-                      </div>
-                      <input
-                        type="range"
-                        min={COLLAGE_MIN_SPACING}
-                        max={COLLAGE_MAX_SPACING}
-                        value={collageSpacing}
-                        onChange={(event) => handleCollageSpacingChange(Number(event.target.value))}
-                        aria-label="Ширина рамки коллажа"
-                      />
-                      <div className="collage-spacing-inline-scale" aria-hidden="true">
-                        <span>Меньше</span>
-                        <span>Больше</span>
-                      </div>
-                      <div className="collage-spacing-inline-subsection">
-                        <div className="collage-spacing-inline-copy">
-                          <span>Скругление углов</span>
-                          <strong>{collageCornerRadiusLabel}</strong>
-                          <small>Скругляет углы у фото внутри белой рамки коллажа.</small>
+                          <div className="collage-spacing-inline-scale" aria-hidden="true">
+                            <span>Меньше</span>
+                            <span>Больше</span>
+                          </div>
+                          <div className="collage-spacing-inline-subsection">
+                            <div className="collage-spacing-inline-copy">
+                              <span>Скругление углов</span>
+                              <strong>{collageCornerRadiusLabel}</strong>
+                              <small>Скругляет углы у фото внутри белой рамки коллажа.</small>
+                            </div>
+                            <input
+                              type="range"
+                              min={COLLAGE_MIN_CORNER_RADIUS}
+                              max={COLLAGE_MAX_CORNER_RADIUS}
+                              value={collageCornerRadius}
+                              onChange={(event) => handleCollageCornerRadiusChange(Number(event.target.value))}
+                              aria-label="Скругление углов коллажа"
+                            />
+                            <div className="collage-spacing-inline-scale" aria-hidden="true">
+                              <span>Меньше</span>
+                              <span>Больше</span>
+                            </div>
+                          </div>
                         </div>
-                        <input
-                          type="range"
-                          min={COLLAGE_MIN_CORNER_RADIUS}
-                          max={COLLAGE_MAX_CORNER_RADIUS}
-                          value={collageCornerRadius}
-                          onChange={(event) => handleCollageCornerRadiusChange(Number(event.target.value))}
-                          aria-label="Скругление углов коллажа"
-                        />
-                        <div className="collage-spacing-inline-scale" aria-hidden="true">
-                          <span>Меньше</span>
-                          <span>Больше</span>
-                        </div>
-                      </div>
+                      ) : null}
                     </div>
                   ) : null}
 

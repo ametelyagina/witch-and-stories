@@ -78,6 +78,7 @@ export type TextLayer = BaseLayer & {
   backgroundEnabled?: boolean;
   backgroundColor?: string;
   backgroundStyle?: TextBackgroundStyle;
+  backgroundOpacity?: number;
   stylePresetId?: string;
 };
 

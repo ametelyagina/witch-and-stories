@@ -6,7 +6,12 @@ import {
   TextLayer,
   UploadedFont,
 } from './types';
-import { DEFAULT_TEXT_BACKGROUND_COLOR, DEFAULT_TEXT_BACKGROUND_STYLE } from './textHighlight';
+import {
+  clampTextBackgroundOpacity,
+  DEFAULT_TEXT_BACKGROUND_COLOR,
+  DEFAULT_TEXT_BACKGROUND_OPACITY,
+  DEFAULT_TEXT_BACKGROUND_STYLE,
+} from './textHighlight';
 
 export type FontOption = {
   id: string;
@@ -31,6 +36,7 @@ export type TextStylePreset = {
   backgroundEnabled: boolean;
   backgroundColor: string;
   backgroundStyle: TextBackgroundStyle;
+  backgroundOpacity: number;
 };
 
 export const BUILT_IN_FONT_OPTIONS: FontOption[] = [
@@ -91,6 +97,7 @@ export const BUILT_IN_TEXT_STYLE_PRESETS: TextStylePreset[] = [
     backgroundEnabled: false,
     backgroundColor: DEFAULT_TEXT_BACKGROUND_COLOR,
     backgroundStyle: DEFAULT_TEXT_BACKGROUND_STYLE,
+    backgroundOpacity: DEFAULT_TEXT_BACKGROUND_OPACITY,
   },
   {
     id: 'editorial-serif',
@@ -108,6 +115,7 @@ export const BUILT_IN_TEXT_STYLE_PRESETS: TextStylePreset[] = [
     backgroundEnabled: false,
     backgroundColor: DEFAULT_TEXT_BACKGROUND_COLOR,
     backgroundStyle: DEFAULT_TEXT_BACKGROUND_STYLE,
+    backgroundOpacity: DEFAULT_TEXT_BACKGROUND_OPACITY,
   },
   {
     id: 'poster-bold',
@@ -125,6 +133,7 @@ export const BUILT_IN_TEXT_STYLE_PRESETS: TextStylePreset[] = [
     backgroundEnabled: false,
     backgroundColor: DEFAULT_TEXT_BACKGROUND_COLOR,
     backgroundStyle: DEFAULT_TEXT_BACKGROUND_STYLE,
+    backgroundOpacity: DEFAULT_TEXT_BACKGROUND_OPACITY,
   },
   {
     id: 'soft-humanist',
@@ -142,6 +151,7 @@ export const BUILT_IN_TEXT_STYLE_PRESETS: TextStylePreset[] = [
     backgroundEnabled: false,
     backgroundColor: DEFAULT_TEXT_BACKGROUND_COLOR,
     backgroundStyle: DEFAULT_TEXT_BACKGROUND_STYLE,
+    backgroundOpacity: DEFAULT_TEXT_BACKGROUND_OPACITY,
   },
   {
     id: 'mono-note',
@@ -159,6 +169,7 @@ export const BUILT_IN_TEXT_STYLE_PRESETS: TextStylePreset[] = [
     backgroundEnabled: false,
     backgroundColor: DEFAULT_TEXT_BACKGROUND_COLOR,
     backgroundStyle: DEFAULT_TEXT_BACKGROUND_STYLE,
+    backgroundOpacity: DEFAULT_TEXT_BACKGROUND_OPACITY,
   },
 ];
 
@@ -194,7 +205,8 @@ export function doesTextStylePresetMatchLayer(preset: TextStylePreset, layer: Te
     preset.color === layer.color &&
     preset.backgroundEnabled === Boolean(layer.backgroundEnabled) &&
     preset.backgroundColor === (layer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR) &&
-    preset.backgroundStyle === (layer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE)
+    preset.backgroundStyle === (layer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE) &&
+    preset.backgroundOpacity === clampTextBackgroundOpacity(layer.backgroundOpacity)
   );
 }
 
@@ -245,6 +257,7 @@ export function createCustomTextStylePreset(id: string, layer: TextLayer, label:
     backgroundEnabled: Boolean(layer.backgroundEnabled),
     backgroundColor: layer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
     backgroundStyle: layer.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE,
+    backgroundOpacity: clampTextBackgroundOpacity(layer.backgroundOpacity),
   };
 }
 

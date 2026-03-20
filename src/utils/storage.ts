@@ -10,7 +10,12 @@ import {
   UploadedFont,
 } from '../editor/types';
 import { isBuiltInFontFamily, TextStylePreset } from '../editor/textPresets';
-import { DEFAULT_TEXT_BACKGROUND_COLOR, DEFAULT_TEXT_BACKGROUND_STYLE } from '../editor/textHighlight';
+import {
+  clampTextBackgroundOpacity,
+  DEFAULT_TEXT_BACKGROUND_COLOR,
+  DEFAULT_TEXT_BACKGROUND_OPACITY,
+  DEFAULT_TEXT_BACKGROUND_STYLE,
+} from '../editor/textHighlight';
 import { getDefaultCollageCornerRadius, getDefaultCollageSpacing } from '../editor/collage';
 import { loadImage } from './media';
 
@@ -133,6 +138,7 @@ const normalizeTextStylePreset = (value: unknown): TextStylePreset | null => {
     backgroundEnabled?: unknown;
     backgroundColor?: unknown;
     backgroundStyle?: unknown;
+    backgroundOpacity?: unknown;
   };
 
   if (
@@ -153,6 +159,7 @@ const normalizeTextStylePreset = (value: unknown): TextStylePreset | null => {
     typeof preset.color !== 'string' ||
     typeof preset.backgroundEnabled !== 'boolean' ||
     typeof preset.backgroundColor !== 'string' ||
+    (preset.backgroundOpacity !== undefined && typeof preset.backgroundOpacity !== 'number') ||
     normalizeTextBackgroundStyle(preset.backgroundStyle) === null
   ) {
     return null;
@@ -174,6 +181,7 @@ const normalizeTextStylePreset = (value: unknown): TextStylePreset | null => {
     backgroundEnabled: preset.backgroundEnabled,
     backgroundColor: preset.backgroundColor,
     backgroundStyle: normalizeTextBackgroundStyle(preset.backgroundStyle) ?? DEFAULT_TEXT_BACKGROUND_STYLE,
+    backgroundOpacity: clampTextBackgroundOpacity(preset.backgroundOpacity),
   };
 };
 
@@ -215,6 +223,7 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
       backgroundEnabled?: unknown;
       backgroundColor?: unknown;
       backgroundStyle?: unknown;
+      backgroundOpacity?: unknown;
       stylePresetId?: unknown;
     };
 
@@ -233,6 +242,7 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
       typeof textLayer.color !== 'string' ||
       (textLayer.backgroundEnabled !== undefined && typeof textLayer.backgroundEnabled !== 'boolean') ||
       (textLayer.backgroundColor !== undefined && typeof textLayer.backgroundColor !== 'string') ||
+      (textLayer.backgroundOpacity !== undefined && typeof textLayer.backgroundOpacity !== 'number') ||
       (textLayer.backgroundStyle !== undefined &&
         normalizeTextBackgroundStyle(textLayer.backgroundStyle) === null) ||
       (textLayer.stylePresetId !== undefined && typeof textLayer.stylePresetId !== 'string')
@@ -258,6 +268,9 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
       color: textLayer.color,
       backgroundEnabled: textLayer.backgroundEnabled ?? false,
       backgroundColor: textLayer.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
+      backgroundOpacity: clampTextBackgroundOpacity(
+        textLayer.backgroundOpacity ?? DEFAULT_TEXT_BACKGROUND_OPACITY,
+      ),
       backgroundStyle:
         normalizeTextBackgroundStyle(textLayer.backgroundStyle) ?? DEFAULT_TEXT_BACKGROUND_STYLE,
       stylePresetId: textLayer.stylePresetId,
