@@ -31,9 +31,9 @@ import {
   COLLAGE_MAX_SPACING,
   COLLAGE_MIN_SPACING,
   clampCollageImageGeometry,
-  COLLAGE_DEFAULT_OVERSCAN,
   COLLAGE_LAYOUTS,
   getDefaultCollageSpacing,
+  getDefaultCollageOverscan,
   getCollageLayoutDefinition,
   getCollageSlots,
   getSlotCoverPlacement,
@@ -228,7 +228,7 @@ function App() {
       },
     });
     const placement = getSlotCoverPlacement(slot, sourceSize.width, sourceSize.height, {
-      overscan: COLLAGE_DEFAULT_OVERSCAN,
+      overscan: getDefaultCollageOverscan(collageLayout),
     });
 
     return createImageLayer(prepared.image, prepared.dataUrl, {
@@ -846,7 +846,7 @@ function App() {
 
     const sourceSize = getImageSourceSize(selectedLayer);
     const placement = getSlotCoverPlacement(slot, sourceSize.width, sourceSize.height, {
-      overscan: COLLAGE_DEFAULT_OVERSCAN,
+      overscan: getDefaultCollageOverscan(collageLayout),
     });
     updateLayer(selectedLayer.id, {
       x: placement.x,

@@ -41,7 +41,17 @@ export const COLLAGE_LAYOUTS: CollageLayoutDefinition[] = [
   },
 ];
 
-export const COLLAGE_DEFAULT_OVERSCAN = 1.08;
+export const getDefaultCollageOverscan = (layout: CollageLayout) => {
+  if (layout === 'stack-2') {
+    return 1.24;
+  }
+
+  if (layout === 'stack-3') {
+    return 1.2;
+  }
+
+  return 1.14;
+};
 export const COLLAGE_MIN_SPACING = 0;
 export const COLLAGE_MAX_SPACING = 64;
 
