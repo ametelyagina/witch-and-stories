@@ -479,11 +479,17 @@ input[type='color'] {
 .collage-spacing-inline-control {
   width: min(100%, 720px);
   display: grid;
-  gap: 8px;
-  padding: 14px 16px;
+  gap: 10px;
+  padding: 15px 16px 14px;
   border-radius: 22px;
   border: 1px solid rgb(197 176 153 / 72%);
   background: rgb(255 255 255 / 58%);
+  box-shadow: 0 10px 24px rgb(96 71 48 / 8%);
+}
+
+.collage-spacing-inline-control--enabled {
+  border-color: rgb(176 129 88 / 72%);
+  background: rgb(255 250 246 / 82%);
 }
 
 .collage-spacing-inline-head,
@@ -494,35 +500,52 @@ input[type='color'] {
   gap: 12px;
 }
 
-.collage-spacing-inline-head div {
+.collage-spacing-inline-copy {
   display: grid;
   gap: 3px;
 }
 
-.collage-spacing-inline-head span {
+.collage-spacing-inline-copy span {
   font-size: 13px;
   font-weight: 700;
   color: var(--muted);
 }
 
-.collage-spacing-inline-head strong {
+.collage-spacing-inline-copy strong {
   font-size: 13px;
   color: var(--accent-deep);
+}
+
+.collage-spacing-inline-copy small {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--muted);
 }
 
 .collage-spacing-inline-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid rgb(188 158 129 / 56%);
+  background: rgb(255 255 255 / 88%);
+  font-size: 13px;
   font-weight: 700;
   color: var(--accent-deep);
+  cursor: pointer;
+  user-select: none;
 }
 
 .collage-spacing-inline-toggle input {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   accent-color: var(--accent);
+}
+
+.collage-spacing-inline-control input[type='range']:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .collage-spacing-inline-scale {
@@ -1875,6 +1898,16 @@ canvas {
   .collage-spacing-inline-control {
     width: 100%;
     padding: 12px 14px;
+  }
+
+  .collage-spacing-inline-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .collage-spacing-inline-toggle {
+    width: 100%;
+    justify-content: center;
   }
 
   .canvas-toolbar .preset-strip,

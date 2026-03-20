@@ -2245,19 +2245,25 @@ function App() {
                   </div>
 
                   {compositionMode === 'collage' ? (
-                    <div className="collage-spacing-inline-control">
+                    <div
+                      className={`collage-spacing-inline-control${
+                        isCollageSpacingEnabled ? ' collage-spacing-inline-control--enabled' : ''
+                      }`}
+                    >
                       <div className="collage-spacing-inline-head">
-                        <div>
-                          <span>Поля коллажа</span>
+                        <div className="collage-spacing-inline-copy">
+                          <span>Поля между фото</span>
                           <strong>{collageSpacingLabel}</strong>
+                          <small>Регулируй их прямо здесь, не открывая выбор формата.</small>
                         </div>
                         <label className="collage-spacing-inline-toggle">
                           <input
                             type="checkbox"
                             checked={isCollageSpacingEnabled}
                             onChange={(event) => handleToggleCollageSpacing(event.target.checked)}
+                            aria-label="Добавить поля между фото"
                           />
-                          <span>Вкл</span>
+                          <span>Добавить поля</span>
                         </label>
                       </div>
                       <input
@@ -2281,7 +2287,7 @@ function App() {
                       {isCollageSwapMode
                         ? collageSwapHelpText
                         : isCollageReady
-                        ? `Коллаж собран: ${collageProgressLabel}. Поля сейчас ${collageSpacingLabel.toLowerCase()}, а кадры можно спокойно двигать внутри ячеек.`
+                        ? `Коллаж собран: ${collageProgressLabel}. Поля между фото сейчас ${collageSpacingLabel.toLowerCase()}, а кадры можно спокойно двигать внутри ячеек.`
                         : `${collageLayoutDefinition.label}: ${collageProgressLabel}. Добавляй фото по порядку, выделяй ячейку для замены и подстрой ширину полей как тебе нравится.`}
                     </p>
                   ) : null}
@@ -2361,6 +2367,7 @@ function App() {
             compositionMode={compositionMode}
             collageSlots={collageSlots}
             filledCollageSlotIds={Array.from(filledCollageSlotIds)}
+            collageSpacing={collageSpacing}
             isCompactPreview={isPhoneViewport && !isCanvasExpanded}
             isFullscreenCanvas={isPhoneViewport && isCanvasExpanded}
             fullscreenZoom={fullscreenZoom}

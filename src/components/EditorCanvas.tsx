@@ -89,6 +89,7 @@ type EditorCanvasProps = {
   compositionMode: CompositionMode;
   collageSlots: CollageSlot[];
   filledCollageSlotIds: string[];
+  collageSpacing: number;
   isCompactPreview: boolean;
   isFullscreenCanvas: boolean;
   fullscreenZoom: number;
@@ -155,6 +156,7 @@ export function EditorCanvas({
   compositionMode,
   collageSlots,
   filledCollageSlotIds,
+  collageSpacing,
   isCompactPreview,
   isFullscreenCanvas,
   fullscreenZoom,
@@ -230,6 +232,7 @@ export function EditorCanvas({
   const isSelectedCollageLayer =
     selectedCanvasLayer?.type === 'image' && selectedCanvasLayer.kind === 'collage';
   const collageFilledSlotIds = new Set(filledCollageSlotIds);
+  const isCollageSpacingless = compositionMode === 'collage' && collageSpacing === 0;
   const [selectionMetrics, setSelectionMetrics] = useState<SelectionMetrics | null>(null);
   const visualScale = isFullscreenCanvas ? scale * fullscreenZoom : scale;
   const viewportPanX = isFullscreenCanvas ? fullscreenPan.x : 0;
@@ -1006,6 +1009,11 @@ export function EditorCanvas({
 
   const renderCollageSlot = (slot: CollageSlot) => {
     const isFilled = collageFilledSlotIds.has(slot.id);
+    const slotCornerRadius = isCollageSpacingless ? 0 : 26;
+    const slotFill =
+      isFilled && isCollageSpacingless ? 'transparent' : isFilled ? 'rgba(255,248,240,0.02)' : 'rgba(255,248,240,0.13)';
+    const slotStroke =
+      isFilled && isCollageSpacingless ? undefined : isFilled ? 'rgba(255,248,240,0.08)' : 'rgba(255,248,240,0.42)';
 
     return (
       <Group key={slot.id} listening={false}>
@@ -1014,9 +1022,9 @@ export function EditorCanvas({
           y={slot.y}
           width={slot.width}
           height={slot.height}
-          cornerRadius={26}
-          fill={isFilled ? 'rgba(255,248,240,0.02)' : 'rgba(255,248,240,0.13)'}
-          stroke={isFilled ? 'rgba(255,248,240,0.08)' : 'rgba(255,248,240,0.42)'}
+          cornerRadius={slotCornerRadius}
+          fill={slotFill}
+          stroke={slotStroke}
           strokeWidth={1.4}
           dash={isFilled ? undefined : [16, 10]}
         />
@@ -1050,15 +1058,25 @@ export function EditorCanvas({
   const renderCollageSlotOutline = (slot: CollageSlot) => {
     const isSelected =
       selectedLayer?.type === 'image' && selectedLayer.kind === 'collage' && selectedLayer.slotId === slot.id;
+    const isFilled = collageFilledSlotIds.has(slot.id);
+
+    if (isCollageSpacingless && isFilled && !isSelected) {
+      return null;
+    }
+
+    const inset = isCollageSpacingless && isFilled ? 1.5 : 0;
+    const outlineWidth = Math.max(0, slot.width - inset * 2);
+    const outlineHeight = Math.max(0, slot.height - inset * 2);
+    const outlineCornerRadius = isCollageSpacingless ? 0 : 26;
 
     return (
       <Rect
         key={`${slot.id}-outline`}
-        x={slot.x}
-        y={slot.y}
-        width={slot.width}
-        height={slot.height}
-        cornerRadius={26}
+        x={slot.x + inset}
+        y={slot.y + inset}
+        width={outlineWidth}
+        height={outlineHeight}
+        cornerRadius={outlineCornerRadius}
         fillEnabled={false}
         stroke={isSelected ? '#d9683c' : 'rgba(255,248,240,0.28)'}
         strokeWidth={isSelected ? 3.2 : 1}
