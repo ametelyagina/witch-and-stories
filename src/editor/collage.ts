@@ -219,6 +219,55 @@ export const clampCollageImageGeometry = (
   };
 };
 
+export const getCollageScaleFromGeometry = (
+  slot: Pick<CollageSlot, 'width' | 'height'>,
+  geometry: Pick<CollageSlot, 'width' | 'height'>,
+) => {
+  const aspectRatio = geometry.width / Math.max(geometry.height, 1);
+  if (!(aspectRatio > 0)) {
+    return 1;
+  }
+
+  const minimum = getMinimumCoverSize(slot, aspectRatio);
+  return minimum.width > 0 ? geometry.width / minimum.width : 1;
+};
+
+export const scaleCollageGeometry = (
+  slot: Pick<CollageSlot, 'x' | 'y' | 'width' | 'height'>,
+  geometry: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  },
+  nextScale: number,
+) => {
+  const aspectRatio = geometry.width / Math.max(geometry.height, 1);
+  if (!(aspectRatio > 0)) {
+    return geometry;
+  }
+
+  const minimum = getMinimumCoverSize(slot, aspectRatio);
+  const clampedScale = Math.max(1, nextScale);
+  const overflowX = Math.max(0, geometry.width - slot.width);
+  const overflowY = Math.max(0, geometry.height - slot.height);
+  const focusX = overflowX === 0 ? 0.5 : clamp((slot.x - geometry.x) / overflowX, 0, 1);
+  const focusY = overflowY === 0 ? 0.5 : clamp((slot.y - geometry.y) / overflowY, 0, 1);
+  const width = minimum.width * clampedScale;
+  const height = minimum.height * clampedScale;
+
+  return clampCollageImageGeometry(
+    slot,
+    {
+      x: slot.x - (width - slot.width) * focusX,
+      y: slot.y - (height - slot.height) * focusY,
+      width,
+      height,
+    },
+    aspectRatio,
+  );
+};
+
 export const remapCollageGeometry = (
   geometry: {
     x: number;

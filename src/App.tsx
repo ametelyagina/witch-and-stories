@@ -35,9 +35,11 @@ import {
   getDefaultCollageSpacing,
   getDefaultCollageOverscan,
   getCollageLayoutDefinition,
+  getCollageScaleFromGeometry,
   getCollageSlots,
   getSlotCoverPlacement,
   remapCollageGeometry,
+  scaleCollageGeometry,
 } from './editor/collage';
 import { DEFAULT_TEXT_BACKGROUND_COLOR, DEFAULT_TEXT_BACKGROUND_STYLE } from './editor/textHighlight';
 import {
@@ -197,6 +199,21 @@ function App() {
 
   const getCollageSlotById = (slotId: string | undefined) =>
     collageSlots.find((slot) => slot.id === slotId) ?? null;
+  const selectedCollageScale = useMemo(() => {
+    if (!(selectedLayer?.type === 'image' && selectedLayer.kind === 'collage')) {
+      return null;
+    }
+
+    const slot = collageSlots.find((item) => item.id === selectedLayer.slotId) ?? null;
+    if (!slot) {
+      return null;
+    }
+
+    return getCollageScaleFromGeometry(slot, {
+      width: selectedLayer.width,
+      height: selectedLayer.height,
+    });
+  }, [collageSlots, selectedLayer]);
 
   const getImageSourceSize = (
     layer:
@@ -855,6 +872,30 @@ function App() {
       height: placement.height,
       rotation: 0,
     });
+  };
+
+  const handleSelectedCollageScaleChange = (nextScale: number) => {
+    if (!(selectedLayer?.type === 'image' && selectedLayer.kind === 'collage')) {
+      return;
+    }
+
+    const slot = getCollageSlotById(selectedLayer.slotId);
+    if (!slot) {
+      return;
+    }
+
+    const geometry = scaleCollageGeometry(
+      slot,
+      {
+        x: selectedLayer.x,
+        y: selectedLayer.y,
+        width: selectedLayer.width,
+        height: selectedLayer.height,
+      },
+      clamp(nextScale, 1, 3),
+    );
+
+    updateLayer(selectedLayer.id, geometry);
   };
 
   const finalizeMainPhotoLayer = async (
@@ -2043,6 +2084,8 @@ function App() {
           isLast={Boolean(selectedLayer && layers[layers.length - 1]?.id === selectedLayer.id)}
           onMoveLayer={moveLayer}
           onChange={updateLayer}
+          collageScale={selectedCollageScale}
+          onCollageScaleChange={handleSelectedCollageScaleChange}
           onTextChange={updateTextField}
           fonts={fonts}
           textStylePresets={textStylePresets}

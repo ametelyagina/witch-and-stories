@@ -23,6 +23,8 @@ type PropertiesPanelProps = {
   isLast: boolean;
   onMoveLayer: (direction: 'backward' | 'forward') => void;
   onChange: (id: string, changes: Partial<Layer>) => void;
+  collageScale: number | null;
+  onCollageScaleChange: (nextScale: number) => void;
   onTextChange: (id: string, value: string) => void;
   fonts: UploadedFont[];
   textStylePresets: TextStylePreset[];
@@ -38,6 +40,8 @@ export function PropertiesPanel({
   isLast,
   onMoveLayer,
   onChange,
+  collageScale,
+  onCollageScaleChange,
   onTextChange,
   fonts,
   textStylePresets,
@@ -72,6 +76,7 @@ export function PropertiesPanel({
         ? 'Текст'
         : null;
   const isCollageImage = selectedLayer?.type === 'image' && selectedLayer.kind === 'collage';
+  const collageScalePercent = Math.round((collageScale ?? 1) * 100);
   const fontOptions = getFontOptions(fonts);
   const uploadedFontCount = Math.max(0, fonts.filter((font) => font.id !== 'default').length);
   const isCompactLayout = viewportWidth <= 720;
@@ -179,10 +184,28 @@ export function PropertiesPanel({
             </div>
 
             {isCollageImage ? (
-              <div className="sidebar-empty">
-                <strong>Коллаж держится по сетке</strong>
-                <p>Выделите фото на канве и потяните за него, чтобы подвинуть кадр внутри ячейки.</p>
-              </div>
+              <>
+                <div className="field">
+                  <div className="field-head">
+                    <label htmlFor="collage-scale-range">Масштаб кадра</label>
+                    <span>{collageScalePercent}%</span>
+                  </div>
+                  <input
+                    id="collage-scale-range"
+                    type="range"
+                    min="100"
+                    max="300"
+                    step="1"
+                    value={collageScalePercent}
+                    onChange={(event) => onCollageScaleChange(Number(event.target.value) / 100)}
+                  />
+                </div>
+
+                <div className="sidebar-empty">
+                  <strong>Коллаж держится по сетке</strong>
+                  <p>Потяните фото на канве, чтобы сдвинуть кадр внутри ячейки, а здесь можно его приблизить или отдалить.</p>
+                </div>
+              </>
             ) : (
               <div className="field">
                 <div className="field-head">
