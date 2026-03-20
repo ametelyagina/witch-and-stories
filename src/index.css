@@ -991,6 +991,13 @@ canvas {
   backdrop-filter: blur(10px);
 }
 
+.save-preview-actions {
+  width: min(100%, 520px);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .save-preview-close {
   justify-self: end;
 }
@@ -1023,7 +1030,9 @@ canvas {
   background: #fff;
   box-shadow: 0 14px 28px rgb(36 29 23 / 12%);
   -webkit-touch-callout: default;
+  -webkit-user-drag: none;
   user-select: none;
+  touch-action: manipulation;
 }
 
 .text-inline-editor {
