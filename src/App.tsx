@@ -88,6 +88,7 @@ function App() {
   const [compositionMode, setCompositionMode] = useState<CompositionMode>('single');
   const [collageLayout, setCollageLayout] = useState<CollageLayout>('grid-4');
   const [collageSpacing, setCollageSpacing] = useState(() => getDefaultCollageSpacing(1080, 1920));
+  const [collageDividersEnabled, setCollageDividersEnabled] = useState(true);
   const [collageSwapSourceLayerId, setCollageSwapSourceLayerId] = useState<string | null>(null);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
@@ -122,7 +123,6 @@ function App() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const transformerRef = useRef<Konva.Transformer | null>(null);
   const nodeRefs = useRef<Record<string, Konva.Node>>({});
-  const lastEnabledCollageSpacingRef = useRef(collageSpacing > 0 ? collageSpacing : getDefaultCollageSpacing(1080, 1920));
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const fontInputRef = useRef<HTMLInputElement | null>(null);
   const persistedStateRef = useRef<EditorPersistedState | null>(null);
@@ -130,8 +130,15 @@ function App() {
 
   const stageSize = useMemo(() => getPresetByKey(preset), [preset]);
   const collageSlots = useMemo(
-    () => getCollageSlots(collageLayout, stageSize.width, stageSize.height, collageSpacing),
-    [collageLayout, collageSpacing, stageSize.height, stageSize.width],
+    () =>
+      getCollageSlots(
+        collageLayout,
+        stageSize.width,
+        stageSize.height,
+        collageSpacing,
+        collageDividersEnabled,
+      ),
+    [collageDividersEnabled, collageLayout, collageSpacing, stageSize.height, stageSize.width],
   );
   const collageLayoutDefinition = useMemo(
     () => getCollageLayoutDefinition(collageLayout),
@@ -537,6 +544,7 @@ function App() {
         setCompositionMode(restored.compositionMode);
         setCollageLayout(restored.collageLayout);
         setCollageSpacing(restored.collageSpacing);
+        setCollageDividersEnabled(restored.collageDividersEnabled);
         setLayers(restored.layers);
         setFonts(restored.fonts);
         setCustomTextStylePresets(restored.textStylePresets);
@@ -553,6 +561,7 @@ function App() {
       compositionMode,
       collageLayout,
       collageSpacing,
+      collageDividersEnabled,
       selectedLayerId,
       layers,
       fonts,
@@ -560,7 +569,7 @@ function App() {
     };
     persistedStateRef.current = snapshot;
     void saveState(snapshot);
-  }, [collageLayout, collageSpacing, compositionMode, customTextStylePresets, fonts, isHydrated, layers, preset, selectedLayerId]);
+  }, [collageDividersEnabled, collageLayout, collageSpacing, compositionMode, customTextStylePresets, fonts, isHydrated, layers, preset, selectedLayerId]);
 
   useEffect(() => {
     const flushPersistedState = () => {
@@ -600,12 +609,6 @@ function App() {
       transformer.getLayer()?.batchDraw();
     }
   }, [selectedLayerId, layers]);
-
-  useEffect(() => {
-    if (collageSpacing > 0) {
-      lastEnabledCollageSpacingRef.current = collageSpacing;
-    }
-  }, [collageSpacing]);
 
   const updateLayer = (id: string, changes: Partial<Layer>) => {
     setLayers((prevLayers) =>
@@ -1564,6 +1567,7 @@ function App() {
         nextStageSize.width,
         nextStageSize.height,
         collageSpacing,
+        collageDividersEnabled,
       );
       setLayers((prev) => remapCollageLayers(prev, collageSlots, nextSlots));
     }
@@ -1587,6 +1591,7 @@ function App() {
     const nextMode = draftCompositionMode;
     const nextLayout = draftCollageLayout;
     const nextSpacing = collageSpacing;
+    const nextDividersEnabled = collageDividersEnabled;
     const hasSinglePhoto = layers.some(
       (layer) => layer.type === 'image' && layer.kind === 'background',
     );
@@ -1595,7 +1600,12 @@ function App() {
       compositionMode === 'collage' &&
       nextMode === 'collage' &&
       collageLayers.length > 0 &&
-      (nextPreset !== preset || nextLayout !== collageLayout || nextSpacing !== collageSpacing);
+      (
+        nextPreset !== preset ||
+        nextLayout !== collageLayout ||
+        nextSpacing !== collageSpacing ||
+        nextDividersEnabled !== collageDividersEnabled
+      );
 
     let shouldClearBackground = false;
     let shouldClearCollage = false;
@@ -1627,7 +1637,13 @@ function App() {
     let nextSlots: ReturnType<typeof getCollageSlots> | null = null;
     if (nextMode === 'collage') {
       const nextStageSize = getPresetByKey(nextPreset);
-      nextSlots = getCollageSlots(nextLayout, nextStageSize.width, nextStageSize.height, nextSpacing);
+      nextSlots = getCollageSlots(
+        nextLayout,
+        nextStageSize.width,
+        nextStageSize.height,
+        nextSpacing,
+        nextDividersEnabled,
+      );
     }
 
     if (shouldRemapCollage && nextSlots) {
@@ -1671,6 +1687,7 @@ function App() {
     setCompositionMode(nextMode);
     setCollageLayout(nextLayout);
     setCollageSpacing(nextSpacing);
+    setCollageDividersEnabled(nextDividersEnabled);
     dismissSelectionUi();
     setIsFormatPickerOpen(false);
   };
@@ -1723,7 +1740,13 @@ function App() {
       return;
     }
 
-    const nextSlots = getCollageSlots(nextLayout, stageSize.width, stageSize.height, collageSpacing);
+    const nextSlots = getCollageSlots(
+      nextLayout,
+      stageSize.width,
+      stageSize.height,
+      collageSpacing,
+      collageDividersEnabled,
+    );
     const extraImages = Math.max(0, collageLayers.length - nextSlots.length);
     if (extraImages > 0) {
       const shouldSwitch = window.confirm(
@@ -1748,11 +1771,13 @@ function App() {
       return;
     }
 
-    if (clampedSpacing > 0) {
-      lastEnabledCollageSpacingRef.current = clampedSpacing;
-    }
-
-    const nextSlots = getCollageSlots(collageLayout, stageSize.width, stageSize.height, clampedSpacing);
+    const nextSlots = getCollageSlots(
+      collageLayout,
+      stageSize.width,
+      stageSize.height,
+      clampedSpacing,
+      collageDividersEnabled,
+    );
     if (collageLayers.length > 0) {
       setLayers((prev) => remapCollageLayers(prev, collageSlots, nextSlots));
     }
@@ -1760,20 +1785,23 @@ function App() {
     setCollageSpacing(clampedSpacing);
   };
 
-  const handleToggleCollageSpacing = (enabled: boolean) => {
-    if (enabled) {
-      const restoredSpacing =
-        lastEnabledCollageSpacingRef.current > 0
-          ? lastEnabledCollageSpacingRef.current
-          : getDefaultCollageSpacing(stageSize.width, stageSize.height);
-      handleCollageSpacingChange(restoredSpacing);
+  const handleToggleCollageDividers = (enabled: boolean) => {
+    if (enabled === collageDividersEnabled) {
       return;
     }
 
-    if (collageSpacing > 0) {
-      lastEnabledCollageSpacingRef.current = collageSpacing;
+    const nextSlots = getCollageSlots(
+      collageLayout,
+      stageSize.width,
+      stageSize.height,
+      collageSpacing,
+      enabled,
+    );
+    if (collageLayers.length > 0) {
+      setLayers((prev) => remapCollageLayers(prev, collageSlots, nextSlots));
     }
-    handleCollageSpacingChange(0);
+
+    setCollageDividersEnabled(enabled);
   };
 
   const handleCanvasDrop = async (files: File[]) => {
@@ -2132,9 +2160,8 @@ function App() {
     compositionMode === 'collage'
       ? !(selectedLayer?.type === 'image' && selectedLayer.kind === 'collage')
       : !hasBackgroundLayer;
-  const collageSpacingLabel =
-    collageSpacing === 0 ? 'Без полей' : `${collageSpacing}px`;
-  const isCollageSpacingEnabled = collageSpacing > 0;
+  const collageFrameLabel =
+    collageSpacing === 0 ? 'Без рамки' : `${collageSpacing}px`;
   const collageSwapButtonLabel =
     isCollageSwapMode ? 'Отменить обмен' : 'Поменять местами';
   const collageSwapHelpText = isCollageSwapMode
@@ -2249,23 +2276,23 @@ function App() {
                   {compositionMode === 'collage' ? (
                     <div
                       className={`collage-spacing-inline-control${
-                        isCollageSpacingEnabled ? ' collage-spacing-inline-control--enabled' : ''
+                        collageSpacing > 0 ? ' collage-spacing-inline-control--enabled' : ''
                       }`}
                     >
                       <div className="collage-spacing-inline-head">
                         <div className="collage-spacing-inline-copy">
-                          <span>Поля между фото</span>
-                          <strong>{collageSpacingLabel}</strong>
-                          <small>Регулируй их прямо здесь, не открывая выбор формата.</small>
+                          <span>Рамка коллажа</span>
+                          <strong>{collageFrameLabel}</strong>
+                          <small>Ползунок меняет толщину рамки, а перегородки внутри можно включать отдельно.</small>
                         </div>
                         <label className="collage-spacing-inline-toggle">
                           <input
                             type="checkbox"
-                            checked={isCollageSpacingEnabled}
-                            onChange={(event) => handleToggleCollageSpacing(event.target.checked)}
-                            aria-label="Добавить поля между фото"
+                            checked={collageDividersEnabled}
+                            onChange={(event) => handleToggleCollageDividers(event.target.checked)}
+                            aria-label={collageDividersEnabled ? 'Убрать перегородки между фото' : 'Добавить перегородки между фото'}
                           />
-                          <span>Добавить поля</span>
+                          <span>{collageDividersEnabled ? 'Убрать перегородки' : 'Добавить перегородки'}</span>
                         </label>
                       </div>
                       <input
@@ -2273,9 +2300,8 @@ function App() {
                         min={COLLAGE_MIN_SPACING}
                         max={COLLAGE_MAX_SPACING}
                         value={collageSpacing}
-                        disabled={!isCollageSpacingEnabled}
                         onChange={(event) => handleCollageSpacingChange(Number(event.target.value))}
-                        aria-label="Ширина полей коллажа"
+                        aria-label="Ширина рамки коллажа"
                       />
                       <div className="collage-spacing-inline-scale" aria-hidden="true">
                         <span>Меньше</span>
@@ -2289,8 +2315,8 @@ function App() {
                       {isCollageSwapMode
                         ? collageSwapHelpText
                         : isCollageReady
-                        ? `Коллаж собран: ${collageProgressLabel}. Поля между фото сейчас ${collageSpacingLabel.toLowerCase()}, а кадры можно спокойно двигать внутри ячеек.`
-                        : `${collageLayoutDefinition.label}: ${collageProgressLabel}. Добавляй фото по порядку, выделяй ячейку для замены и подстрой ширину полей как тебе нравится.`}
+                        ? `Коллаж собран: ${collageProgressLabel}. Рамка сейчас ${collageFrameLabel.toLowerCase()}, перегородки ${collageDividersEnabled ? 'включены' : 'выключены'}, а кадры можно спокойно двигать внутри ячеек.`
+                        : `${collageLayoutDefinition.label}: ${collageProgressLabel}. Добавляй фото по порядку, выделяй ячейку для замены и настраивай рамку с перегородками так, как тебе нравится.`}
                     </p>
                   ) : null}
                 </>
@@ -2370,6 +2396,7 @@ function App() {
             collageSlots={collageSlots}
             filledCollageSlotIds={Array.from(filledCollageSlotIds)}
             collageSpacing={collageSpacing}
+            collageDividersEnabled={collageDividersEnabled}
             isCompactPreview={isPhoneViewport && !isCanvasExpanded}
             isFullscreenCanvas={isPhoneViewport && isCanvasExpanded}
             fullscreenZoom={fullscreenZoom}

@@ -90,6 +90,7 @@ type EditorCanvasProps = {
   collageSlots: CollageSlot[];
   filledCollageSlotIds: string[];
   collageSpacing: number;
+  collageDividersEnabled: boolean;
   isCompactPreview: boolean;
   isFullscreenCanvas: boolean;
   fullscreenZoom: number;
@@ -157,6 +158,7 @@ export function EditorCanvas({
   collageSlots,
   filledCollageSlotIds,
   collageSpacing,
+  collageDividersEnabled,
   isCompactPreview,
   isFullscreenCanvas,
   fullscreenZoom,
@@ -232,7 +234,8 @@ export function EditorCanvas({
   const isSelectedCollageLayer =
     selectedCanvasLayer?.type === 'image' && selectedCanvasLayer.kind === 'collage';
   const collageFilledSlotIds = new Set(filledCollageSlotIds);
-  const isCollageSpacingless = compositionMode === 'collage' && collageSpacing === 0;
+  const isCollageSpacingless =
+    compositionMode === 'collage' && (collageSpacing === 0 || !collageDividersEnabled);
   const [selectionMetrics, setSelectionMetrics] = useState<SelectionMetrics | null>(null);
   const [isSelectionColorPicking, setIsSelectionColorPicking] = useState(false);
   const visualScale = isFullscreenCanvas ? scale * fullscreenZoom : scale;

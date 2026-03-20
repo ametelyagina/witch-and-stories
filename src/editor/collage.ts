@@ -78,11 +78,11 @@ const clamp = (value: number, min: number, max: number) => Math.min(Math.max(val
 export const getDefaultCollageSpacing = (width: number, height: number) =>
   clamp(Math.round(Math.min(width, height) * 0.022), 18, 28);
 
-const getFrameMetrics = (spacing: number) => {
+const getFrameMetrics = (spacing: number, dividersEnabled = true) => {
   const frameSpacing = clamp(Math.round(spacing), COLLAGE_MIN_SPACING, COLLAGE_MAX_SPACING);
   return {
     outer: frameSpacing,
-    gap: frameSpacing,
+    gap: dividersEnabled ? frameSpacing : 0,
   };
 };
 
@@ -149,8 +149,9 @@ export const getCollageSlots = (
   width: number,
   height: number,
   spacing = getDefaultCollageSpacing(width, height),
+  dividersEnabled = true,
 ): CollageSlot[] => {
-  const { outer, gap } = getFrameMetrics(spacing);
+  const { outer, gap } = getFrameMetrics(spacing, dividersEnabled);
 
   if (layout === 'hero-top-3') {
     return buildHeroStripSlots(width, height, outer, gap, {

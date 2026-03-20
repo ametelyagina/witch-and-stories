@@ -19,6 +19,7 @@ type PersistedEnvelope = {
   compositionMode?: CompositionMode;
   collageLayout?: CollageLayout;
   collageSpacing?: number;
+  collageDividersEnabled?: boolean;
   selectedLayerId?: string | null;
   fonts?: unknown[];
   textStylePresets?: unknown[];
@@ -432,6 +433,7 @@ export type EditorPersistedState = {
   compositionMode: CompositionMode;
   collageLayout: CollageLayout;
   collageSpacing: number;
+  collageDividersEnabled: boolean;
   selectedLayerId: string | null;
   layers: Layer[];
   fonts: UploadedFont[];
@@ -461,6 +463,8 @@ export const readState = async (): Promise<EditorPersistedState | null> => {
       typeof parsed.collageSpacing === 'number' && Number.isFinite(parsed.collageSpacing)
         ? parsed.collageSpacing
         : getDefaultCollageSpacing(1080, restoredPreset === 'carousel' ? 1350 : 1920);
+    const restoredCollageDividersEnabled =
+      typeof parsed.collageDividersEnabled === 'boolean' ? parsed.collageDividersEnabled : true;
     const restoredFonts = [
       DEFAULT_FONT,
       ...(Array.isArray(parsed.fonts)
@@ -548,6 +552,7 @@ export const readState = async (): Promise<EditorPersistedState | null> => {
           : 'single',
       collageLayout: restoredCollageLayout,
       collageSpacing: restoredCollageSpacing,
+      collageDividersEnabled: restoredCollageDividersEnabled,
       selectedLayerId: hasSelectedLayer ? nextSelectedLayerId : null,
       layers: normalized,
       fonts: restoredFonts,
@@ -573,6 +578,7 @@ export const saveState = async (state: EditorPersistedState) => {
     compositionMode: state.compositionMode,
     collageLayout: state.collageLayout,
     collageSpacing: state.collageSpacing,
+    collageDividersEnabled: state.collageDividersEnabled,
     selectedLayerId: state.selectedLayerId,
     fonts: state.fonts,
     textStylePresets: state.textStylePresets,
