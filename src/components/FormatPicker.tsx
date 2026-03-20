@@ -1,10 +1,6 @@
 import { useEffect } from 'react';
 
-import {
-  COLLAGE_LAYOUTS,
-  COLLAGE_MAX_SPACING,
-  COLLAGE_MIN_SPACING,
-} from '../editor/collage';
+import { COLLAGE_LAYOUTS } from '../editor/collage';
 import { CollageLayout, CompositionMode, Preset } from '../editor/types';
 
 type FormatPickerProps = {
@@ -12,11 +8,9 @@ type FormatPickerProps = {
   preset: Preset;
   compositionMode: CompositionMode;
   collageLayout: CollageLayout;
-  collageSpacing: number;
   onPresetChange: (preset: Preset) => void;
   onCompositionModeChange: (mode: CompositionMode) => void;
   onCollageLayoutChange: (layout: CollageLayout) => void;
-  onCollageSpacingChange: (spacing: number) => void;
   onClose: () => void;
   onApply: () => void;
 };
@@ -26,11 +20,9 @@ export function FormatPicker({
   preset,
   compositionMode,
   collageLayout,
-  collageSpacing,
   onPresetChange,
   onCompositionModeChange,
   onCollageLayoutChange,
-  onCollageSpacingChange,
   onClose,
   onApply,
 }: FormatPickerProps) {
@@ -52,8 +44,6 @@ export function FormatPicker({
   if (!open) {
     return null;
   }
-
-  const spacingLabel = collageSpacing === 0 ? 'Без полей' : `${collageSpacing}px`;
 
   return (
     <div
@@ -127,58 +117,30 @@ export function FormatPicker({
           </section>
 
           {compositionMode === 'collage' ? (
-            <>
-              <section className="format-picker-section">
-                <div className="format-picker-section-head">
-                  <h3>Раскладка</h3>
-                  <p>Листай вниз и выбирай тот ритм кадров, который нужен сейчас.</p>
-                </div>
+            <section className="format-picker-section">
+              <div className="format-picker-section-head">
+                <h3>Раскладка</h3>
+                <p>Листай вниз и выбирай тот ритм кадров, который нужен сейчас.</p>
+              </div>
 
-                <div className="format-picker-layout-list" aria-label="Варианты коллажа">
-                  {COLLAGE_LAYOUTS.map((layout) => (
-                    <button
-                      key={layout.key}
-                      type="button"
-                      className={
-                        collageLayout === layout.key
-                          ? 'active format-picker-layout-button'
-                          : 'ghost format-picker-layout-button'
-                      }
-                      onClick={() => onCollageLayoutChange(layout.key)}
-                    >
-                      <strong>{layout.label}</strong>
-                      <small>{layout.description}</small>
-                    </button>
-                  ))}
-                </div>
-              </section>
-
-              <section className="format-picker-section">
-                <div className="format-picker-section-head">
-                  <h3>Поля коллажа</h3>
-                  <p>От плотной склейки без зазоров до более воздушной сетки.</p>
-                </div>
-
-                <div className="format-picker-spacing-control">
-                  <div className="format-picker-spacing-head">
-                    <span>Текущее значение</span>
-                    <strong>{spacingLabel}</strong>
-                  </div>
-                  <input
-                    type="range"
-                    min={COLLAGE_MIN_SPACING}
-                    max={COLLAGE_MAX_SPACING}
-                    value={collageSpacing}
-                    onChange={(event) => onCollageSpacingChange(Number(event.target.value))}
-                    aria-label="Ширина полей коллажа"
-                  />
-                  <div className="format-picker-spacing-scale" aria-hidden="true">
-                    <span>0</span>
-                    <span>Больше воздуха</span>
-                  </div>
-                </div>
-              </section>
-            </>
+              <div className="format-picker-layout-list" aria-label="Варианты коллажа">
+                {COLLAGE_LAYOUTS.map((layout) => (
+                  <button
+                    key={layout.key}
+                    type="button"
+                    className={
+                      collageLayout === layout.key
+                        ? 'active format-picker-layout-button'
+                        : 'ghost format-picker-layout-button'
+                    }
+                    onClick={() => onCollageLayoutChange(layout.key)}
+                  >
+                    <strong>{layout.label}</strong>
+                    <small>{layout.description}</small>
+                  </button>
+                ))}
+              </div>
+            </section>
           ) : null}
         </div>
 
