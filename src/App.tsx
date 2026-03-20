@@ -1229,10 +1229,9 @@ function App() {
   };
 
   const handleAddSymbol = (symbol: SymbolOption) => {
-    const sizeMultiplier = symbol.sizeMultiplier ?? 1;
-    const baseSize = Math.round(Math.min(stageSize.width, stageSize.height) * 0.16 * sizeMultiplier);
-    const width = Math.max(96, Math.round(Math.max(180 * sizeMultiplier, baseSize * 1.55)));
-    const height = Math.max(96, Math.round(Math.max(180 * sizeMultiplier, baseSize * 1.3)));
+    const baseSize = Math.round(Math.min(stageSize.width, stageSize.height) * 0.16);
+    const width = Math.max(180, Math.round(baseSize * 1.55));
+    const height = Math.max(180, Math.round(baseSize * 1.3));
 
     addTextLayer(symbol.value, {
       openEditor: false,
@@ -1247,6 +1246,7 @@ function App() {
       y: (stageSize.height - height) / 2,
       width,
       height,
+      rotation: symbol.rotation ?? 0,
     });
     setIsSymbolPickerOpen(false);
   };

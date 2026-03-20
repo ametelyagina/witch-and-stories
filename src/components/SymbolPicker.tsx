@@ -68,13 +68,21 @@ export function SymbolPicker({ open, onClose, onPick }: SymbolPickerProps) {
                   <button
                     key={`${group.id}-${item.value}-${item.label}`}
                     type="button"
-                    className={`ghost symbol-picker-button${
-                      item.sizeMultiplier && item.sizeMultiplier < 1 ? ' symbol-picker-button--short' : ''
-                    }`}
+                    className="ghost symbol-picker-button"
                     aria-label={`${item.label}: ${item.value}`}
                     onClick={() => onPick(item)}
                   >
-                    <strong>{item.value}</strong>
+                    <strong
+                      style={
+                        item.rotation !== undefined
+                          ? {
+                              transform: `rotate(${item.rotation}deg)`,
+                            }
+                          : undefined
+                      }
+                    >
+                      {item.value}
+                    </strong>
                     <span>{item.label}</span>
                   </button>
                 ))}
