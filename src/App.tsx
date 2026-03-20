@@ -86,12 +86,6 @@ type CanvasWorkspace = {
   offsetY: number;
 };
 
-type SavePreviewState = {
-  url: string;
-  file: File;
-  fileName: string;
-};
-
 function App() {
   const [preset, setPreset] = useState<Preset>('story');
   const [compositionMode, setCompositionMode] = useState<CompositionMode>('single');
@@ -128,7 +122,7 @@ function App() {
     image: HTMLImageElement;
   } | null>(null);
   const [isSymbolPickerOpen, setIsSymbolPickerOpen] = useState(false);
-  const [savePreview, setSavePreview] = useState<SavePreviewState | null>(null);
+  const [savePreviewDataUrl, setSavePreviewDataUrl] = useState<string | null>(null);
   const [isPreparingSavePreview, setIsPreparingSavePreview] = useState(false);
 
   const stageRef = useRef<Konva.Stage | null>(null);
@@ -138,9 +132,6 @@ function App() {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const fontInputRef = useRef<HTMLInputElement | null>(null);
   const persistedStateRef = useRef<EditorPersistedState | null>(null);
-  const savePreviewLongPressTimerRef = useRef<number | null>(null);
-  const savePreviewLongPressStartRef = useRef<{ x: number; y: number } | null>(null);
-  const savePreviewLongPressTriggeredRef = useRef(false);
   const defaultTextPreset = getTextStylePresetById(DEFAULT_TEXT_STYLE_PRESET_ID, customTextStylePresets);
 
   const stageSize = useMemo(() => getPresetByKey(preset), [preset]);
@@ -1509,22 +1500,7 @@ function App() {
   };
 
   const closeSavePreview = () => {
-    setSavePreview((current) => {
-      if (current) {
-        URL.revokeObjectURL(current.url);
-      }
-      return null;
-    });
-  };
-
-  const clearSavePreviewLongPress = () => {
-    if (savePreviewLongPressTimerRef.current !== null) {
-      window.clearTimeout(savePreviewLongPressTimerRef.current);
-      savePreviewLongPressTimerRef.current = null;
-    }
-
-    savePreviewLongPressStartRef.current = null;
-    savePreviewLongPressTriggeredRef.current = false;
+    setSavePreviewDataUrl(null);
   };
 
   useEffect(() => {
@@ -1552,79 +1528,6 @@ function App() {
     };
   }, []);
 
-  useEffect(() => () => clearSavePreviewLongPress(), []);
-
-  const handleSavePreviewToDevice = async () => {
-    if (!savePreview) {
-      return;
-    }
-
-    try {
-      const canShareFiles =
-        typeof navigator.share === 'function' &&
-        (typeof navigator.canShare !== 'function' || navigator.canShare({ files: [savePreview.file] }));
-
-      if (canShareFiles) {
-        await navigator.share({
-          files: [savePreview.file],
-          title: savePreview.fileName,
-        });
-        return;
-      }
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return;
-      }
-    }
-
-    const link = document.createElement('a');
-    link.href = savePreview.url;
-    link.download = savePreview.fileName;
-    link.rel = 'noopener';
-    link.click();
-  };
-
-  const handleSavePreviewPointerDown = (event: ReactPointerEvent<HTMLImageElement>) => {
-    if (!savePreview) {
-      return;
-    }
-
-    if (event.pointerType === 'mouse' && event.button !== 0) {
-      return;
-    }
-
-    event.preventDefault();
-    savePreviewLongPressTriggeredRef.current = false;
-    savePreviewLongPressStartRef.current = { x: event.clientX, y: event.clientY };
-    clearSavePreviewLongPress();
-    savePreviewLongPressStartRef.current = { x: event.clientX, y: event.clientY };
-    savePreviewLongPressTimerRef.current = window.setTimeout(() => {
-      savePreviewLongPressTriggeredRef.current = true;
-      void handleSavePreviewToDevice();
-    }, 360);
-  };
-
-  const handleSavePreviewPointerMove = (event: ReactPointerEvent<HTMLImageElement>) => {
-    if (!savePreviewLongPressStartRef.current || savePreviewLongPressTriggeredRef.current) {
-      return;
-    }
-
-    const deltaX = event.clientX - savePreviewLongPressStartRef.current.x;
-    const deltaY = event.clientY - savePreviewLongPressStartRef.current.y;
-    if (Math.hypot(deltaX, deltaY) > 10) {
-      clearSavePreviewLongPress();
-    }
-  };
-
-  const handleSavePreviewPointerEnd = (event: ReactPointerEvent<HTMLImageElement>) => {
-    if (savePreviewLongPressTriggeredRef.current) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-
-    clearSavePreviewLongPress();
-  };
-
   const handleRequestSavePreview = async () => {
     const stage = stageRef.current;
     if (!stage || isPreparingSavePreview || layers.length === 0) {
@@ -1641,20 +1544,7 @@ function App() {
         pixelRatio: 3,
         mimeType: 'image/png',
       });
-      const blob = await dataUrlToBlob(dataUrl);
-      const fileName = `${preset}-${Date.now()}.png`;
-      const previewFile = new File([blob], fileName, { type: 'image/png' });
-      const previewUrl = URL.createObjectURL(blob);
-      setSavePreview((current) => {
-        if (current) {
-          URL.revokeObjectURL(current.url);
-        }
-        return {
-          url: previewUrl,
-          file: previewFile,
-          fileName,
-        };
-      });
+      setSavePreviewDataUrl(dataUrl);
     } finally {
       setIsPreparingSavePreview(false);
     }
@@ -2558,7 +2448,7 @@ function App() {
             onDeleteSelected={removeSelectedLayer}
             onRequestSavePreview={handleRequestSavePreview}
             isPreparingSavePreview={isPreparingSavePreview}
-            isSavePreviewOpen={Boolean(savePreview)}
+            isSavePreviewOpen={Boolean(savePreviewDataUrl)}
             onPinchExpand={handleCanvasPinchExpand}
             onPinchZoom={handleCanvasPinchZoom}
             onPinchCollapse={handleCanvasPinchCollapse}
@@ -2593,31 +2483,19 @@ function App() {
         />
       </main>
 
-      {savePreview ? (
+      {savePreviewDataUrl ? (
         <div className="save-preview" role="dialog" aria-modal="true" aria-label="Сохранение изображения">
-          <div className="save-preview-actions">
-            <button type="button" className="ghost" onClick={handleSavePreviewToDevice}>
-              Сохранить
-            </button>
-            <button type="button" className="secondary save-preview-close" onClick={closeSavePreview}>
-              Закрыть
-            </button>
-          </div>
+          <button type="button" className="secondary save-preview-close" onClick={closeSavePreview}>
+            Закрыть
+          </button>
           <div className="save-preview-card">
             <p className="save-preview-copy">
-              Удерживай изображение или нажми “Сохранить”. Теперь мы открываем системное меню без перехода на битую ссылку.
+              Удерживай изображение и выбирай «Сохранить в Фото» в меню iPhone.
             </p>
             <img
-              src={savePreview.url}
+              src={savePreviewDataUrl}
               alt="Готовое изображение для сохранения"
               className="save-preview-image"
-              draggable={false}
-              onDragStart={(event) => event.preventDefault()}
-              onContextMenu={(event) => event.preventDefault()}
-              onPointerDown={handleSavePreviewPointerDown}
-              onPointerMove={handleSavePreviewPointerMove}
-              onPointerUp={handleSavePreviewPointerEnd}
-              onPointerCancel={handleSavePreviewPointerEnd}
             />
           </div>
         </div>
