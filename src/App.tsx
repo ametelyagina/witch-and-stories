@@ -16,6 +16,8 @@ import { ActionRail } from './components/ActionRail';
 import { EditorCanvas } from './components/EditorCanvas';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import {
+  CollageLayout,
+  CompositionMode,
   DEFAULT_FONT,
   ImageCrop,
   Layer,
@@ -25,6 +27,14 @@ import {
   Preset,
   PRESETS,
 } from './editor/types';
+import {
+  clampCollageImageGeometry,
+  COLLAGE_LAYOUTS,
+  getCollageLayoutDefinition,
+  getCollageSlots,
+  getSlotCoverPlacement,
+  remapCollageGeometry,
+} from './editor/collage';
 import { DEFAULT_TEXT_BACKGROUND_COLOR, DEFAULT_TEXT_BACKGROUND_STYLE } from './editor/textHighlight';
 import {
   createCustomTextStylePreset,
@@ -51,7 +61,12 @@ function getPresetByKey(preset: Preset) {
   return PRESETS.find((item) => item.key === preset)!;
 }
 
-type ClipboardImageMode = 'background' | 'overlay';
+type ClipboardImageMode = 'background' | 'overlay' | 'collage';
+type PreparedImage = {
+  id: string;
+  dataUrl: string;
+  image: HTMLImageElement;
+};
 
 type CanvasWorkspace = {
   viewportWidth: number;
@@ -62,6 +77,8 @@ type CanvasWorkspace = {
 
 function App() {
   const [preset, setPreset] = useState<Preset>('story');
+  const [compositionMode, setCompositionMode] = useState<CompositionMode>('single');
+  const [collageLayout, setCollageLayout] = useState<CollageLayout>('grid-4');
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [dragArmedImageId, setDragArmedImageId] = useState<string | null>(null);
@@ -96,6 +113,14 @@ function App() {
   const defaultTextPreset = getTextStylePresetById(DEFAULT_TEXT_STYLE_PRESET_ID, customTextStylePresets);
 
   const stageSize = useMemo(() => getPresetByKey(preset), [preset]);
+  const collageSlots = useMemo(
+    () => getCollageSlots(collageLayout, stageSize.width, stageSize.height),
+    [collageLayout, stageSize.height, stageSize.width],
+  );
+  const collageLayoutDefinition = useMemo(
+    () => getCollageLayoutDefinition(collageLayout),
+    [collageLayout],
+  );
 
   const selectedLayer = useMemo(
     () => layers.find((layer) => layer.id === selectedLayerId) || null,
@@ -105,12 +130,28 @@ function App() {
     () => (selectedLayerId ? layers.findIndex((layer) => layer.id === selectedLayerId) : -1),
     [layers, selectedLayerId],
   );
-  const canSendSelectedLayerToBack = selectedLayerIndex > 0;
+  const isSelectedCollageImage =
+    selectedLayer?.type === 'image' && selectedLayer.kind === 'collage';
+  const canSendSelectedLayerToBack = !isSelectedCollageImage && selectedLayerIndex > 0;
   const canBringSelectedLayerToFront =
-    selectedLayerIndex !== -1 && selectedLayerIndex < layers.length - 1;
+    !isSelectedCollageImage && selectedLayerIndex !== -1 && selectedLayerIndex < layers.length - 1;
   const hasBackgroundLayer = layers.some(
     (layer) => layer.type === 'image' && layer.kind === 'background',
   );
+  const collageLayers = useMemo(
+    () =>
+      layers.filter(
+        (layer): layer is Extract<Layer, { type: 'image' }> =>
+          layer.type === 'image' && layer.kind === 'collage',
+      ),
+    [layers],
+  );
+  const collageSlotOrder = useMemo(() => collageSlots.map((slot) => slot.id), [collageSlots]);
+  const filledCollageSlotIds = useMemo(
+    () => new Set(collageLayers.map((layer) => layer.slotId).filter((slotId): slotId is string => Boolean(slotId))),
+    [collageLayers],
+  );
+  const isCollageReady = collageLayers.length >= collageSlots.length && collageSlots.length > 0;
   const isPhoneViewport = viewport.width <= 720;
   const canvasWorkspace = useMemo(
     () => {
@@ -148,6 +189,125 @@ function App() {
     () => getAvailableTextStylePresets(customTextStylePresets),
     [customTextStylePresets],
   );
+
+  const getCollageSlotById = (slotId: string | undefined) =>
+    collageSlots.find((slot) => slot.id === slotId) ?? null;
+
+  const getImageSourceSize = (
+    layer:
+      | Extract<Layer, { type: 'image' }>
+      | {
+          naturalWidth: number;
+          naturalHeight: number;
+          crop?: ImageCrop;
+        },
+  ) => ({
+    width: Math.max(1, layer.naturalWidth * ((layer.crop?.width ?? 100) / 100)),
+    height: Math.max(1, layer.naturalHeight * ((layer.crop?.height ?? 100) / 100)),
+  });
+
+  const buildCollageLayer = (prepared: PreparedImage, slotId: string) => {
+    const slot = getCollageSlotById(slotId);
+    if (!slot) {
+      return null;
+    }
+
+    const sourceSize = getImageSourceSize({
+      naturalWidth: prepared.image.naturalWidth || prepared.image.width,
+      naturalHeight: prepared.image.naturalHeight || prepared.image.height,
+      crop: {
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+      },
+    });
+    const placement = getSlotCoverPlacement(slot, sourceSize.width, sourceSize.height);
+
+    return createImageLayer(prepared.image, prepared.dataUrl, {
+      kind: 'collage',
+      slotId,
+      x: placement.x,
+      y: placement.y,
+      width: placement.width,
+      height: placement.height,
+    });
+  };
+
+  const getNextCollageSlotId = (currentLayers: Layer[], preferredSlotId?: string | null) => {
+    if (preferredSlotId && collageSlotOrder.includes(preferredSlotId)) {
+      return preferredSlotId;
+    }
+
+    const occupied = new Set(
+      currentLayers
+        .filter(
+          (layer): layer is Extract<Layer, { type: 'image' }> =>
+            layer.type === 'image' && layer.kind === 'collage',
+        )
+        .map((layer) => layer.slotId)
+        .filter((slotId): slotId is string => Boolean(slotId)),
+    );
+
+    return collageSlotOrder.find((slotId) => !occupied.has(slotId)) ?? null;
+  };
+
+  const remapCollageLayers = (
+    currentLayers: Layer[],
+    currentSlots: ReturnType<typeof getCollageSlots>,
+    nextSlots: ReturnType<typeof getCollageSlots>,
+  ) => {
+    const nextSlotMap = new Map(nextSlots.map((slot) => [slot.id, slot]));
+    const currentSlotMap = new Map(currentSlots.map((slot) => [slot.id, slot]));
+    const nextSlotOrder = nextSlots.map((slot) => slot.id);
+    const usedSlotIds = new Set<string>();
+    let fallbackSourceSlotIndex = 0;
+
+    return currentLayers.flatMap((layer) => {
+      if (!(layer.type === 'image' && layer.kind === 'collage')) {
+        return [layer];
+      }
+
+      const nextSlotId =
+        layer.slotId && nextSlotMap.has(layer.slotId)
+          ? layer.slotId
+          : nextSlotOrder.find((slotId) => !usedSlotIds.has(slotId));
+      if (!nextSlotId) {
+        return [];
+      }
+
+      usedSlotIds.add(nextSlotId);
+      const previousSlot =
+        (layer.slotId ? currentSlotMap.get(layer.slotId) : null) ??
+        currentSlots[fallbackSourceSlotIndex] ??
+        currentSlots[currentSlots.length - 1];
+      fallbackSourceSlotIndex += 1;
+      const nextSlot = nextSlotMap.get(nextSlotId);
+      if (!previousSlot || !nextSlot) {
+        return [];
+      }
+
+      const nextGeometry = remapCollageGeometry(
+        {
+          x: layer.x,
+          y: layer.y,
+          width: layer.width,
+          height: layer.height,
+        },
+        previousSlot,
+        nextSlot,
+      );
+
+      return [
+        {
+          ...layer,
+          slotId: nextSlotId,
+          rotation: 0,
+          ...nextGeometry,
+        },
+      ];
+    });
+  };
 
   useEffect(() => {
     const resize = () => {
@@ -265,6 +425,8 @@ function App() {
       const restored = await readState();
       if (restored) {
         setPreset(restored.preset);
+        setCompositionMode(restored.compositionMode);
+        setCollageLayout(restored.collageLayout);
         setLayers(restored.layers);
         setFonts(restored.fonts);
         setCustomTextStylePresets(restored.textStylePresets);
@@ -278,6 +440,8 @@ function App() {
     if (!isHydrated) return;
     const snapshot: EditorPersistedState = {
       preset,
+      compositionMode,
+      collageLayout,
       selectedLayerId,
       layers,
       fonts,
@@ -285,7 +449,7 @@ function App() {
     };
     persistedStateRef.current = snapshot;
     void saveState(snapshot);
-  }, [customTextStylePresets, fonts, isHydrated, layers, preset, selectedLayerId]);
+  }, [collageLayout, compositionMode, customTextStylePresets, fonts, isHydrated, layers, preset, selectedLayerId]);
 
   useEffect(() => {
     const flushPersistedState = () => {
@@ -498,7 +662,8 @@ function App() {
     image: HTMLImageElement,
     dataUrl: string,
     placement: {
-      kind: 'background' | 'overlay';
+      kind: 'background' | 'overlay' | 'collage';
+      slotId?: string;
       x: number;
       y: number;
       width: number;
@@ -510,6 +675,7 @@ function App() {
       id: nanoid(),
       type: 'image',
       kind: placement.kind,
+      slotId: placement.slotId,
       src: dataUrl,
       image,
       naturalWidth: image.naturalWidth || image.width,
@@ -549,6 +715,82 @@ function App() {
     setDragArmedImageId(null);
   };
 
+  const prepareImageFromDataUrl = async (dataUrl: string): Promise<PreparedImage> => ({
+    id: nanoid(),
+    dataUrl,
+    image: await loadImage(dataUrl),
+  });
+
+  const prepareFilesAsImages = async (files: File[]) =>
+    Promise.all(
+      files.map(async (file) => {
+        const dataUrl = await readFileAsDataUrl(file);
+        return prepareImageFromDataUrl(dataUrl);
+      }),
+    );
+
+  const addPreparedImagesToCollage = (
+    preparedImages: PreparedImage[],
+    options: {
+      preferredSlotId?: string | null;
+    } = {},
+  ) => {
+    if (preparedImages.length === 0) {
+      return 0;
+    }
+
+    let insertedCount = 0;
+    let lastInsertedLayerId: string | null = null;
+    let shouldWarnAboutOverflow = false;
+    let nextPreferredSlotId = options.preferredSlotId ?? null;
+
+    setLayers((prev) => {
+      let nextLayers = [...prev];
+
+      for (const preparedImage of preparedImages) {
+        const targetSlotId = getNextCollageSlotId(nextLayers, nextPreferredSlotId);
+        nextPreferredSlotId = null;
+
+        if (!targetSlotId) {
+          shouldWarnAboutOverflow = true;
+          continue;
+        }
+
+        const nextLayer = buildCollageLayer(preparedImage, targetSlotId);
+        if (!nextLayer) {
+          continue;
+        }
+
+        insertedCount += 1;
+        lastInsertedLayerId = nextLayer.id;
+        nextLayers = [
+          ...nextLayers.filter(
+            (layer) => !(layer.type === 'image' && layer.kind === 'collage' && layer.slotId === targetSlotId),
+          ),
+          nextLayer,
+        ];
+      }
+
+      return nextLayers;
+    });
+
+    if (lastInsertedLayerId) {
+      setSelectedLayerId(lastInsertedLayerId);
+      setEditingTextLayerId(null);
+      setIsTextToolsOpen(false);
+      setDragArmedImageId(null);
+    }
+
+    if (shouldWarnAboutOverflow) {
+      const layoutLabel = getCollageLayoutDefinition(collageLayout).label.toLowerCase();
+      window.setTimeout(() => {
+        alert(`В раскладке “${layoutLabel}” пока не хватает ячеек для всех выбранных фото.`);
+      }, 0);
+    }
+
+    return insertedCount;
+  };
+
   const addImageFromBlob = async (blob: Blob, mode: ClipboardImageMode = 'background') => {
     const imageDataUrl = await readBlobAsDataUrl(blob);
     await addImageLayerFromDataUrl(imageDataUrl, mode);
@@ -576,6 +818,32 @@ function App() {
 
     await addImageFromBlob(blob, mode);
     return true;
+  };
+
+  const handleClearCollage = () => {
+    setLayers((prev) => prev.filter((layer) => !(layer.type === 'image' && layer.kind === 'collage')));
+    dismissSelectionUi();
+  };
+
+  const handleResetSelectedCollageImage = () => {
+    if (!(selectedLayer?.type === 'image' && selectedLayer.kind === 'collage')) {
+      return;
+    }
+
+    const slot = getCollageSlotById(selectedLayer.slotId);
+    if (!slot) {
+      return;
+    }
+
+    const sourceSize = getImageSourceSize(selectedLayer);
+    const placement = getSlotCoverPlacement(slot, sourceSize.width, sourceSize.height);
+    updateLayer(selectedLayer.id, {
+      x: placement.x,
+      y: placement.y,
+      width: placement.width,
+      height: placement.height,
+      rotation: 0,
+    });
   };
 
   const finalizeMainPhotoLayer = async (
@@ -667,17 +935,44 @@ function App() {
     dataUrl: string,
     mode: ClipboardImageMode = 'background',
   ) => {
-    const image = await loadImage(dataUrl);
     if (mode === 'overlay') {
+      const image = await loadImage(dataUrl);
       await insertOverlayImageLayer(image, dataUrl);
       return;
     }
 
+    if (mode === 'collage') {
+      const preparedImage = await prepareImageFromDataUrl(dataUrl);
+      addPreparedImagesToCollage([preparedImage], {
+        preferredSlotId:
+          selectedLayer?.type === 'image' && selectedLayer.kind === 'collage'
+            ? selectedLayer.slotId
+            : null,
+      });
+      return;
+    }
+
+    const image = await loadImage(dataUrl);
     if (pendingImage) return;
     setPendingImage({ dataUrl, image });
   };
 
   const addImageLayer = async (file: File) => {
+    if (compositionMode === 'collage') {
+      const preparedImage = (await prepareFilesAsImages([file]))[0];
+      if (!preparedImage) {
+        return;
+      }
+
+      addPreparedImagesToCollage([preparedImage], {
+        preferredSlotId:
+          selectedLayer?.type === 'image' && selectedLayer.kind === 'collage'
+            ? selectedLayer.slotId
+            : null,
+      });
+      return;
+    }
+
     const dataUrl = await readFileAsDataUrl(file);
     await addImageLayerFromDataUrl(dataUrl);
   };
@@ -778,7 +1073,7 @@ function App() {
   };
 
   const moveLayer = (direction: 'backward' | 'forward') => {
-    if (!selectedLayerId) return;
+    if (!selectedLayerId || isSelectedCollageImage) return;
 
     setLayers((prev) => {
       const index = prev.findIndex((layer) => layer.id === selectedLayerId);
@@ -794,7 +1089,7 @@ function App() {
   };
 
   const moveSelectedLayerToEdge = (edge: 'back' | 'front') => {
-    if (!selectedLayerId) {
+    if (!selectedLayerId || isSelectedCollageImage) {
       return;
     }
 
@@ -827,6 +1122,23 @@ function App() {
     updateLayer(id, { crop: updates });
   };
 
+  const getConstrainedCollageGeometry = (
+    layer: Extract<Layer, { type: 'image' }>,
+    geometry: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    },
+  ) => {
+    const slot = getCollageSlotById(layer.slotId);
+    if (!slot) {
+      return geometry;
+    }
+
+    return clampCollageImageGeometry(slot, geometry, layer.width / Math.max(layer.height, 1));
+  };
+
   const handleTransform = (id: string, event: Konva.KonvaEventObject<Event>) => {
     const node = event.target;
     const layer = layers.find((item) => item.id === id);
@@ -852,6 +1164,24 @@ function App() {
 
     const width = clamp(node.width() * scaleX, 24, stageSize.width * 3);
     const height = clamp(node.height() * scaleY, 24, stageSize.height * 3);
+    if (layer.kind === 'collage') {
+      const geometry = getConstrainedCollageGeometry(layer, {
+        x: node.x(),
+        y: node.y(),
+        width,
+        height,
+      });
+
+      updateLayer(id, {
+        x: geometry.x,
+        y: geometry.y,
+        rotation: 0,
+        width: geometry.width,
+        height: geometry.height,
+      });
+      return;
+    }
+
     updateLayer(id, {
       x: node.x(),
       y: node.y(),
@@ -865,12 +1195,28 @@ function App() {
     const node = event.target;
     if (!(node instanceof Konva.Node)) return;
 
+    const layer = layers.find((item) => item.id === id);
+    if (layer?.type === 'image' && layer.kind === 'collage') {
+      const geometry = getConstrainedCollageGeometry(layer, {
+        x: node.x(),
+        y: node.y(),
+        width: layer.width,
+        height: layer.height,
+      });
+
+      updateLayer(id, {
+        x: geometry.x,
+        y: geometry.y,
+      });
+      setDragArmedImageId(null);
+      return;
+    }
+
     updateLayer(id, {
       x: node.x(),
       y: node.y(),
     });
 
-    const layer = layers.find((item) => item.id === id);
     if (layer?.type === 'image') {
       setDragArmedImageId(null);
     }
@@ -990,7 +1336,84 @@ function App() {
   };
 
   const handlePresetChange = (nextPreset: Preset) => {
+    if (nextPreset === preset) {
+      return;
+    }
+
+    if (compositionMode === 'collage' && collageLayers.length > 0) {
+      const nextStageSize = getPresetByKey(nextPreset);
+      const nextSlots = getCollageSlots(collageLayout, nextStageSize.width, nextStageSize.height);
+      setLayers((prev) => remapCollageLayers(prev, collageSlots, nextSlots));
+    }
+
     setPreset(nextPreset);
+  };
+
+  const handleCompositionModeChange = (nextMode: CompositionMode) => {
+    if (nextMode === compositionMode) {
+      return;
+    }
+
+    const hasSinglePhoto = layers.some(
+      (layer) => layer.type === 'image' && layer.kind === 'background',
+    );
+    const hasCollagePhoto = layers.some(
+      (layer) => layer.type === 'image' && layer.kind === 'collage',
+    );
+
+    if (nextMode === 'collage' && hasSinglePhoto) {
+      const shouldSwitch = window.confirm(
+        'Переключиться на коллаж? Текущее фоновое фото уйдёт, а текст и стикеры останутся.',
+      );
+      if (!shouldSwitch) {
+        return;
+      }
+
+      setLayers((prev) =>
+        prev.filter((layer) => !(layer.type === 'image' && layer.kind === 'background')),
+      );
+    }
+
+    if (nextMode === 'single' && hasCollagePhoto) {
+      const shouldSwitch = window.confirm(
+        'Вернуться к одиночному фото? Коллажные кадры очистятся, а текст и стикеры останутся.',
+      );
+      if (!shouldSwitch) {
+        return;
+      }
+
+      setLayers((prev) =>
+        prev.filter((layer) => !(layer.type === 'image' && layer.kind === 'collage')),
+      );
+    }
+
+    setPendingImage(null);
+    setCompositionMode(nextMode);
+    dismissSelectionUi();
+  };
+
+  const handleCollageLayoutChange = (nextLayout: CollageLayout) => {
+    if (nextLayout === collageLayout) {
+      return;
+    }
+
+    const nextSlots = getCollageSlots(nextLayout, stageSize.width, stageSize.height);
+    const extraImages = Math.max(0, collageLayers.length - nextSlots.length);
+    if (extraImages > 0) {
+      const shouldSwitch = window.confirm(
+        `В новой раскладке меньше ячеек. Лишние фото (${extraImages}) будут скрыты. Продолжить?`,
+      );
+      if (!shouldSwitch) {
+        return;
+      }
+    }
+
+    if (collageLayers.length > 0) {
+      setLayers((prev) => remapCollageLayers(prev, collageSlots, nextSlots));
+    }
+
+    setCollageLayout(nextLayout);
+    dismissSelectionUi();
   };
 
   const handleCanvasDrop = async (files: File[]) => {
@@ -999,7 +1422,18 @@ function App() {
       return;
     }
 
-      for (const file of imageFiles) {
+    if (compositionMode === 'collage') {
+      const preparedImages = await prepareFilesAsImages(imageFiles);
+      addPreparedImagesToCollage(preparedImages, {
+        preferredSlotId:
+          selectedLayer?.type === 'image' && selectedLayer.kind === 'collage'
+            ? selectedLayer.slotId
+            : null,
+      });
+      return;
+    }
+
+    for (const file of imageFiles) {
       if (pendingImage) return;
       await addImageLayer(file);
     }
@@ -1186,7 +1620,7 @@ function App() {
         if (file) {
           event.preventDefault();
           if (pendingImage) return;
-          await addImageFromBlob(file);
+          await addImageFromBlob(file, compositionMode === 'collage' ? 'collage' : 'background');
           return;
         }
       }
@@ -1194,7 +1628,7 @@ function App() {
       const html = data.getData('text/html');
       if (html) {
         if (
-          await parseClipboardHtmlAsImage(html)
+          await parseClipboardHtmlAsImage(html, compositionMode === 'collage' ? 'collage' : 'background')
         ) {
           event.preventDefault();
           return;
@@ -1204,7 +1638,7 @@ function App() {
       const text = data.getData('text/plain');
       if (text && text.trim()) {
         event.preventDefault();
-        await parseClipboardTextAsImage(text);
+        await parseClipboardTextAsImage(text, compositionMode === 'collage' ? 'collage' : 'background');
       }
     };
 
@@ -1213,13 +1647,28 @@ function App() {
   }, [
     addImageFromBlob,
     addImageFromText,
+    compositionMode,
     parseClipboardHtmlAsImage,
     parseClipboardTextAsImage,
   ]);
 
   const handleUploadImage = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(event.target.files ?? []);
+    if (!files.length) return;
+
+    if (compositionMode === 'collage') {
+      const preparedImages = await prepareFilesAsImages(files);
+      addPreparedImagesToCollage(preparedImages, {
+        preferredSlotId:
+          selectedLayer?.type === 'image' && selectedLayer.kind === 'collage'
+            ? selectedLayer.slotId
+            : null,
+      });
+      event.target.value = '';
+      return;
+    }
+
+    const file = files[0];
     if (pendingImage) {
       event.target.value = '';
       return;
@@ -1303,6 +1752,27 @@ function App() {
     );
   };
 
+  const collageProgressLabel =
+    compositionMode === 'collage' ? `${collageLayers.length}/${collageSlots.length} фото` : null;
+  const primaryImageActionLabel =
+    compositionMode === 'collage'
+      ? selectedLayer?.type === 'image' && selectedLayer.kind === 'collage'
+        ? 'Заменить'
+        : `Фото ${collageLayers.length}/${collageSlots.length}`
+      : hasBackgroundLayer
+        ? 'Сменить фон'
+        : 'Добавить фон';
+  const secondaryImageActionLabel =
+    compositionMode === 'collage' ? 'Очистить' : 'Убрать фон';
+  const utilityImageActionLabel =
+    compositionMode === 'collage' ? 'В центр' : 'Фон в центр';
+  const isSecondaryImageActionDisabled =
+    compositionMode === 'collage' ? collageLayers.length === 0 : !hasBackgroundLayer;
+  const isUtilityImageActionDisabled =
+    compositionMode === 'collage'
+      ? !(selectedLayer?.type === 'image' && selectedLayer.kind === 'collage')
+      : !hasBackgroundLayer;
+
   return (
     <div className="app">
       <TopBar
@@ -1346,17 +1816,21 @@ function App() {
         </Suspense>
 
         <ActionRail
-          onUploadImage={() => imageInputRef.current?.click()}
+          onPrimaryImageAction={() => imageInputRef.current?.click()}
+          primaryImageLabel={primaryImageActionLabel}
+          onSecondaryImageAction={compositionMode === 'collage' ? handleClearCollage : handleRemoveBackground}
+          secondaryImageLabel={secondaryImageActionLabel}
+          isSecondaryImageActionDisabled={isSecondaryImageActionDisabled}
           onPaste={handlePasteFromClipboard}
           onAddText={addTextLayer}
           onUploadFont={() => fontInputRef.current?.click()}
-          onRecenterBackground={handleRecenterBackground}
-          onRemoveBackground={handleRemoveBackground}
+          onUtilityImageAction={
+            compositionMode === 'collage' ? handleResetSelectedCollageImage : handleRecenterBackground
+          }
+          utilityImageLabel={utilityImageActionLabel}
+          isUtilityImageActionDisabled={isUtilityImageActionDisabled}
           onDeleteSelected={removeSelectedLayer}
           onExport={handleExport}
-          hasBackgroundLayer={hasBackgroundLayer}
-          isRecenterBackgroundDisabled={!hasBackgroundLayer}
-          isRemoveBackgroundDisabled={!hasBackgroundLayer}
           isDeleteDisabled={!selectedLayer}
           isExportDisabled={layers.length === 0}
         />
@@ -1369,18 +1843,67 @@ function App() {
           {!isPhoneViewport || !isCanvasExpanded ? (
             <div className="canvas-toolbar">
               {!isCanvasExpanded ? (
-                <div className="preset-strip" aria-label="Canvas presets">
-                  {PRESETS.map((item) => (
+                <>
+                  <div className="preset-strip" aria-label="Canvas presets">
+                    {PRESETS.map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        className={preset === item.key ? 'active' : 'ghost'}
+                        onClick={() => handlePresetChange(item.key)}
+                      >
+                        {item.key === 'story' ? '9:16' : '4:5'}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="composition-strip" aria-label="Composition mode">
                     <button
-                      key={item.key}
                       type="button"
-                      className={preset === item.key ? 'active' : 'ghost'}
-                      onClick={() => handlePresetChange(item.key)}
+                      className={compositionMode === 'single' ? 'active composition-button' : 'ghost composition-button'}
+                      onClick={() => handleCompositionModeChange('single')}
                     >
-                      {item.key === 'story' ? '9:16' : '4:5'}
+                      <span>Одна</span>
+                      <small>одно фото</small>
                     </button>
-                  ))}
-                </div>
+                    <button
+                      type="button"
+                      className={compositionMode === 'collage' ? 'active composition-button' : 'ghost composition-button'}
+                      onClick={() => handleCompositionModeChange('collage')}
+                    >
+                      <span>Коллаж</span>
+                      <small>{collageProgressLabel ?? 'несколько фото'}</small>
+                    </button>
+                  </div>
+
+                  {compositionMode === 'collage' ? (
+                    <div className="collage-layout-strip" aria-label="Collage layouts">
+                      {COLLAGE_LAYOUTS.map((layout) => (
+                        <button
+                          key={layout.key}
+                          type="button"
+                          className={
+                            collageLayout === layout.key
+                              ? 'active collage-layout-button'
+                              : 'ghost collage-layout-button'
+                          }
+                          onClick={() => handleCollageLayoutChange(layout.key)}
+                        >
+                          <strong>{layout.label}</strong>
+                          <small>{layout.description}</small>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  {compositionMode === 'collage' ? (
+                    <p className="canvas-toolbar-note">
+                      {isCollageReady
+                        ? `Коллаж собран: ${collageProgressLabel}. Можно двигать и приближать кадры прямо в ячейках.`
+                        : `${collageLayoutDefinition.label}: ${collageProgressLabel}. Добавляй фото по порядку или выдели ячейку, чтобы заменить её.`}
+                    </p>
+                  ) : null}
+                </>
               ) : null}
 
               {isPhoneViewport ? (
@@ -1419,6 +1942,9 @@ function App() {
             canvasOffsetY={canvasWorkspace.offsetY}
             scale={stageScale}
             selectedLayer={selectedLayer}
+            compositionMode={compositionMode}
+            collageSlots={collageSlots}
+            filledCollageSlotIds={Array.from(filledCollageSlotIds)}
             isCompactPreview={isPhoneViewport && !isCanvasExpanded}
             isFullscreenCanvas={isPhoneViewport && isCanvasExpanded}
             fullscreenZoom={fullscreenZoom}
@@ -1494,6 +2020,7 @@ function App() {
         ref={imageInputRef}
         type="file"
         accept="image/*"
+        multiple={compositionMode === 'collage'}
         onChange={handleUploadImage}
         hidden
       />

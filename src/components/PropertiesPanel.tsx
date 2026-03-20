@@ -71,6 +71,7 @@ export function PropertiesPanel({
       : selectedLayer?.type === 'text'
         ? 'Текст'
         : null;
+  const isCollageImage = selectedLayer?.type === 'image' && selectedLayer.kind === 'collage';
   const fontOptions = getFontOptions(fonts);
   const uploadedFontCount = Math.max(0, fonts.filter((font) => font.id !== 'default').length);
   const isCompactLayout = viewportWidth <= 720;
@@ -150,36 +151,57 @@ export function PropertiesPanel({
             <div className="panel-section-head">
               <div>
                 <h3>Трансформация</h3>
-                <p>Положение слоя в стеке и общий поворот.</p>
+                <p>
+                  {isCollageImage
+                    ? 'Коллажную ячейку двигайте и приближайте прямо на канве. Поворот и порядок слоя здесь зафиксированы.'
+                    : 'Положение слоя в стеке и общий поворот.'}
+                </p>
               </div>
             </div>
 
             <div className="buttons">
-              <button type="button" className="ghost" onClick={() => onMoveLayer('backward')} disabled={isFirst}>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => onMoveLayer('backward')}
+                disabled={isFirst || isCollageImage}
+              >
                 Сдвинуть назад
               </button>
-              <button type="button" className="ghost" onClick={() => onMoveLayer('forward')} disabled={isLast}>
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => onMoveLayer('forward')}
+                disabled={isLast || isCollageImage}
+              >
                 Сдвинуть вперед
               </button>
             </div>
 
-            <div className="field">
-              <div className="field-head">
-                <label>Вращение</label>
-                <span>{selectedLayer.rotation.toFixed(0)}°</span>
+            {isCollageImage ? (
+              <div className="sidebar-empty">
+                <strong>Коллаж держится по сетке</strong>
+                <p>Выделите фото на канве и потяните за него или за углы рамки, чтобы подвинуть кадр внутри ячейки.</p>
               </div>
-              <input
-                type="range"
-                min="-45"
-                max="45"
-                value={selectedLayer.rotation}
-                onChange={(event) =>
-                  onChange(selectedLayer.id, {
-                    rotation: Number(event.target.value),
-                  })
-                }
-              />
-            </div>
+            ) : (
+              <div className="field">
+                <div className="field-head">
+                  <label>Вращение</label>
+                  <span>{selectedLayer.rotation.toFixed(0)}°</span>
+                </div>
+                <input
+                  type="range"
+                  min="-45"
+                  max="45"
+                  value={selectedLayer.rotation}
+                  onChange={(event) =>
+                    onChange(selectedLayer.id, {
+                      rotation: Number(event.target.value),
+                    })
+                  }
+                />
+              </div>
+            )}
           </section>
 
           {isTextLayer(selectedLayer) ? (

@@ -1,4 +1,6 @@
 import {
+  CollageLayout,
+  CompositionMode,
   DEFAULT_FONT,
   ImageCrop,
   Layer,
@@ -13,6 +15,8 @@ import { loadImage } from './media';
 
 type PersistedEnvelope = {
   preset?: Preset;
+  compositionMode?: CompositionMode;
+  collageLayout?: CollageLayout;
   selectedLayerId?: string | null;
   fonts?: unknown[];
   textStylePresets?: unknown[];
@@ -258,6 +262,7 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
 
   const imageLayer = value as {
     kind?: unknown;
+    slotId?: unknown;
     src?: unknown;
     naturalWidth?: unknown;
     naturalHeight?: unknown;
@@ -277,7 +282,13 @@ const normalizeLayer = (value: unknown): PersistedLayer | null => {
   return {
     id: layer.id,
     type: 'image',
-    kind: imageLayer.kind === 'overlay' ? 'overlay' : 'background',
+    kind:
+      imageLayer.kind === 'overlay'
+        ? 'overlay'
+        : imageLayer.kind === 'collage'
+          ? 'collage'
+          : 'background',
+    slotId: typeof imageLayer.slotId === 'string' ? imageLayer.slotId : undefined,
     x: layer.x,
     y: layer.y,
     width: layer.width,
@@ -416,6 +427,8 @@ const buildImage = async (layer: PersistedImageLayer) => {
 
 export type EditorPersistedState = {
   preset: Preset;
+  compositionMode: CompositionMode;
+  collageLayout: CollageLayout;
   selectedLayerId: string | null;
   layers: Layer[];
   fonts: UploadedFont[];
@@ -429,6 +442,14 @@ export const readState = async (): Promise<EditorPersistedState | null> => {
     const parsed = pickMostRecentEnvelope(localEnvelope, indexedDbEnvelope);
     if (!parsed) return null;
     const restoredPreset: Preset = parsed.preset === 'carousel' ? 'carousel' : 'story';
+    const restoredCompositionMode: CompositionMode =
+      parsed.compositionMode === 'collage' ? 'collage' : 'single';
+    const restoredCollageLayout: CollageLayout =
+      parsed.collageLayout === 'stack-2'
+        ? 'stack-2'
+        : parsed.collageLayout === 'stack-3'
+          ? 'stack-3'
+          : 'grid-4';
     const restoredFonts = [
       DEFAULT_FONT,
       ...(Array.isArray(parsed.fonts)
@@ -510,6 +531,11 @@ export const readState = async (): Promise<EditorPersistedState | null> => {
 
     return {
       preset: restoredPreset,
+      compositionMode:
+        restoredCompositionMode === 'collage' || normalized.some((layer) => layer.type === 'image' && layer.kind === 'collage')
+          ? 'collage'
+          : 'single',
+      collageLayout: restoredCollageLayout,
       selectedLayerId: hasSelectedLayer ? nextSelectedLayerId : null,
       layers: normalized,
       fonts: restoredFonts,
@@ -532,6 +558,8 @@ export const saveState = async (state: EditorPersistedState) => {
 
   const payload = {
     preset: state.preset,
+    compositionMode: state.compositionMode,
+    collageLayout: state.collageLayout,
     selectedLayerId: state.selectedLayerId,
     fonts: state.fonts,
     textStylePresets: state.textStylePresets,

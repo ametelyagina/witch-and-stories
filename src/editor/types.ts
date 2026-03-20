@@ -1,4 +1,7 @@
 export type Preset = 'story' | 'carousel';
+export type CompositionMode = 'single' | 'collage';
+export type CollageLayout = 'grid-4' | 'stack-2' | 'stack-3';
+export type ImageLayerKind = 'background' | 'overlay' | 'collage';
 
 export type PresetDefinition = {
   key: Preset;
@@ -48,7 +51,8 @@ export type TextBackgroundStyle = 'soft' | 'sharp' | 'cloud' | 'block' | 'frame'
 
 export type ImageLayer = BaseLayer & {
   type: 'image';
-  kind?: 'background' | 'overlay';
+  kind?: ImageLayerKind;
+  slotId?: string;
   src: string;
   image: HTMLImageElement;
   naturalWidth: number;

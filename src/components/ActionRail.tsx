@@ -1,15 +1,17 @@
 type ActionRailProps = {
-  onUploadImage: () => void;
+  onPrimaryImageAction: () => void;
+  primaryImageLabel: string;
+  onSecondaryImageAction: () => void;
+  secondaryImageLabel: string;
+  isSecondaryImageActionDisabled: boolean;
   onPaste: () => void;
   onAddText: () => void;
   onUploadFont: () => void;
-  onRecenterBackground: () => void;
-  onRemoveBackground: () => void;
+  onUtilityImageAction: () => void;
+  utilityImageLabel: string;
+  isUtilityImageActionDisabled: boolean;
   onDeleteSelected: () => void;
   onExport: () => void;
-  hasBackgroundLayer: boolean;
-  isRecenterBackgroundDisabled: boolean;
-  isRemoveBackgroundDisabled: boolean;
   isDeleteDisabled: boolean;
   isExportDisabled: boolean;
 };
@@ -35,41 +37,39 @@ function ActionButton({ className = '', disabled, label, onClick }: ActionButton
 }
 
 export function ActionRail({
-  onUploadImage,
+  onPrimaryImageAction,
+  primaryImageLabel,
+  onSecondaryImageAction,
+  secondaryImageLabel,
+  isSecondaryImageActionDisabled,
   onPaste,
   onAddText,
   onUploadFont,
-  onRecenterBackground,
-  onRemoveBackground,
+  onUtilityImageAction,
+  utilityImageLabel,
+  isUtilityImageActionDisabled,
   onDeleteSelected,
   onExport,
-  hasBackgroundLayer,
-  isRecenterBackgroundDisabled,
-  isRemoveBackgroundDisabled,
   isDeleteDisabled,
   isExportDisabled,
 }: ActionRailProps) {
   return (
     <aside className="action-rail">
-      <ActionButton
-        className="primary"
-        label={hasBackgroundLayer ? 'Сменить фон' : 'Добавить фон'}
-        onClick={onUploadImage}
-      />
+      <ActionButton className="primary" label={primaryImageLabel} onClick={onPrimaryImageAction} />
       <ActionButton
         className="ghost"
-        disabled={isRemoveBackgroundDisabled}
-        label="Убрать фон"
-        onClick={onRemoveBackground}
+        disabled={isSecondaryImageActionDisabled}
+        label={secondaryImageLabel}
+        onClick={onSecondaryImageAction}
       />
       <ActionButton className="ghost" label="Вставить" onClick={onPaste} />
       <ActionButton className="secondary" label="Добавить текст" onClick={onAddText} />
       <ActionButton className="ghost" label="Импорт шрифта" onClick={onUploadFont} />
       <ActionButton
         className="ghost"
-        disabled={isRecenterBackgroundDisabled}
-        label="Фон в центр"
-        onClick={onRecenterBackground}
+        disabled={isUtilityImageActionDisabled}
+        label={utilityImageLabel}
+        onClick={onUtilityImageAction}
       />
       <ActionButton className="danger" disabled={isDeleteDisabled} label="Удалить слой" onClick={onDeleteSelected} />
       <ActionButton className="export" disabled={isExportDisabled} label="Экспорт PNG" onClick={onExport} />

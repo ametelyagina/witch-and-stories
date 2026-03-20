@@ -10,12 +10,14 @@ import { flushSync } from 'react-dom';
 
 import { FontPicker } from './FontPicker';
 import {
+  CompositionMode,
   Layer,
   TextAlign,
   TextBackgroundStyle,
   TextLayer,
   UploadedFont,
 } from '../editor/types';
+import { CollageSlot } from '../editor/collage';
 import {
   buildTextHighlightBlock,
   buildTextHighlightRects,
@@ -84,6 +86,9 @@ type EditorCanvasProps = {
   canvasOffsetY: number;
   scale: number;
   selectedLayer: Layer | null;
+  compositionMode: CompositionMode;
+  collageSlots: CollageSlot[];
+  filledCollageSlotIds: string[];
   isCompactPreview: boolean;
   isFullscreenCanvas: boolean;
   fullscreenZoom: number;
@@ -147,6 +152,9 @@ export function EditorCanvas({
   canvasOffsetY,
   scale,
   selectedLayer,
+  compositionMode,
+  collageSlots,
+  filledCollageSlotIds,
   isCompactPreview,
   isFullscreenCanvas,
   fullscreenZoom,
@@ -219,6 +227,7 @@ export function EditorCanvas({
   const selectedCanvasLayer =
     selectedLayer?.type === 'image' && selectedLayer.kind === 'background' ? null : selectedLayer;
   const selectedTextLayer = isTextLayer(selectedLayer) ? selectedLayer : null;
+  const collageFilledSlotIds = new Set(filledCollageSlotIds);
   const [selectionMetrics, setSelectionMetrics] = useState<SelectionMetrics | null>(null);
   const visualScale = isFullscreenCanvas ? scale * fullscreenZoom : scale;
   const viewportPanX = isFullscreenCanvas ? fullscreenPan.x : 0;
@@ -971,6 +980,54 @@ export function EditorCanvas({
     }
   }
 
+  const getCollageSlotById = (slotId: string | undefined) =>
+    collageSlots.find((slot) => slot.id === slotId) ?? null;
+
+  const renderCollageSlot = (slot: CollageSlot) => {
+    const isFilled = collageFilledSlotIds.has(slot.id);
+    const isSelected =
+      selectedLayer?.type === 'image' && selectedLayer.kind === 'collage' && selectedLayer.slotId === slot.id;
+
+    return (
+      <Group key={slot.id} listening={false}>
+        <Rect
+          x={slot.x}
+          y={slot.y}
+          width={slot.width}
+          height={slot.height}
+          cornerRadius={26}
+          fill={isFilled ? 'rgba(255,248,240,0.02)' : 'rgba(255,248,240,0.13)'}
+          stroke={isSelected ? '#d9683c' : 'rgba(255,248,240,0.42)'}
+          strokeWidth={isSelected ? 3 : 1.4}
+          dash={isFilled ? undefined : [16, 10]}
+        />
+        {!isFilled ? (
+          <>
+            <Text
+              x={slot.x + slot.width / 2 - 90}
+              y={slot.y + slot.height / 2 - 24}
+              width={180}
+              align="center"
+              text={slot.label}
+              fontSize={24}
+              fontStyle="bold"
+              fill="rgba(255,248,240,0.84)"
+            />
+            <Text
+              x={slot.x + slot.width / 2 - 130}
+              y={slot.y + slot.height / 2 + 8}
+              width={260}
+              align="center"
+              text="Добавь фото"
+              fontSize={16}
+              fill="rgba(255,239,228,0.62)"
+            />
+          </>
+        ) : null}
+      </Group>
+    );
+  };
+
   const renderImageLayer = (layer: Extract<Layer, { type: 'image' }>) => {
     const crop = {
       x: (layer.crop.x / 100) * layer.naturalWidth,
@@ -978,6 +1035,7 @@ export function EditorCanvas({
       width: (layer.crop.width / 100) * layer.naturalWidth,
       height: (layer.crop.height / 100) * layer.naturalHeight,
     };
+    const collageSlot = layer.kind === 'collage' ? getCollageSlotById(layer.slotId) : null;
 
     if (layer.kind === 'background') {
       return (
@@ -1017,15 +1075,25 @@ export function EditorCanvas({
       y: layer.y,
       draggable: true,
       rotation: layer.rotation,
-      dragBoundFunc: (position: { x: number; y: number }) =>
-        layer.kind === 'overlay' || dragArmedImageId === layer.id
-          ? position
-          : {
-              x: layer.x,
-              y: layer.y,
-            },
+      dragBoundFunc: (position: { x: number; y: number }) => {
+        if (layer.kind === 'overlay' || dragArmedImageId === layer.id) {
+          return position;
+        }
+
+        if (layer.kind === 'collage' && collageSlot) {
+          return {
+            x: clampToFrame(position.x, collageSlot.x + collageSlot.width - layer.width, collageSlot.x),
+            y: clampToFrame(position.y, collageSlot.y + collageSlot.height - layer.height, collageSlot.y),
+          };
+        }
+
+        return {
+          x: layer.x,
+          y: layer.y,
+        };
+      },
       onClick: () => {
-        if (layer.kind === 'overlay') {
+        if (layer.kind === 'overlay' || layer.kind === 'collage') {
           onSelectLayer(layer.id);
         } else {
           onTapImageLayer(layer.id);
@@ -1034,7 +1102,7 @@ export function EditorCanvas({
         syncSelectionMetrics(layer);
       },
       onTap: () => {
-        if (layer.kind === 'overlay') {
+        if (layer.kind === 'overlay' || layer.kind === 'collage') {
           onSelectLayer(layer.id);
         } else {
           onTapImageLayer(layer.id);
@@ -1043,12 +1111,12 @@ export function EditorCanvas({
         syncSelectionMetrics(layer);
       },
       onDblClick: () => {
-        if (layer.kind !== 'overlay') {
+        if (layer.kind !== 'overlay' && layer.kind !== 'collage') {
           onArmImageDrag(layer.id);
         }
       },
       onDblTap: () => {
-        if (layer.kind !== 'overlay') {
+        if (layer.kind !== 'overlay' && layer.kind !== 'collage') {
           onArmImageDrag(layer.id);
         }
       },
@@ -1063,6 +1131,14 @@ export function EditorCanvas({
         }
 
         if (layer.kind === 'overlay') {
+          rememberLayerInteractionOrigin(layer);
+          cancelledInteractionLayerIdsRef.current.delete(layer.id);
+          onSelectLayer(layer.id);
+          syncSelectionMetrics(layer);
+          return;
+        }
+
+        if (layer.kind === 'collage') {
           rememberLayerInteractionOrigin(layer);
           cancelledInteractionLayerIdsRef.current.delete(layer.id);
           onSelectLayer(layer.id);
@@ -1167,6 +1243,33 @@ export function EditorCanvas({
           />
         </Group>
       );
+    }
+
+    if (layer.kind === 'collage' && collageSlot) {
+      return (
+        <Group
+          key={`${layer.id}-slot`}
+          clip={{
+            x: collageSlot.x,
+            y: collageSlot.y,
+            width: collageSlot.width,
+            height: collageSlot.height,
+          }}
+        >
+          <KonvaImage
+            {...sharedProps}
+            image={layer.image}
+            width={layer.width}
+            height={layer.height}
+            hitStrokeWidth={20}
+            crop={crop}
+          />
+        </Group>
+      );
+    }
+
+    if (layer.kind === 'collage') {
+      return null;
     }
 
     return (
@@ -1486,6 +1589,12 @@ export function EditorCanvas({
                         ? renderImageLayer(layer)
                         : null,
                     )}
+                    {compositionMode === 'collage' ? collageSlots.map((slot) => renderCollageSlot(slot)) : null}
+                    {layers.map((layer) =>
+                      layer.type === 'image' && layer.kind === 'collage'
+                        ? renderImageLayer(layer)
+                        : null,
+                    )}
                   </Group>
                   <Group x={canvasOffsetX} y={canvasOffsetY}>
                     {layers.map((layer) => {
@@ -1499,7 +1608,7 @@ export function EditorCanvas({
                   {!isMultiTouchActive ? (
                     <Transformer
                       ref={transformerRef}
-                      rotateEnabled
+                      rotateEnabled={!(selectedLayer?.type === 'image' && selectedLayer.kind === 'collage')}
                       ignoreStroke
                       shouldOverdrawWholeArea={selectedLayer?.type === 'image'}
                       borderStroke="#d9683c"
@@ -1811,8 +1920,10 @@ export function EditorCanvas({
 
         {!isCompactPreview && !isFullscreenCanvas ? (
           <p className="hint">
-            {layers.length === 0
+            {layers.length === 0 && compositionMode !== 'collage'
               ? `Пустая канва ${width} x ${height}. Перетащите фото сюда, вставьте из буфера или нажмите “Добавить фон”.`
+              : compositionMode === 'collage' && collageSlots.length > 0
+                ? `${width} x ${height} · ${Math.round(scale * 100)}% · коллаж ${filledCollageSlotIds.length}/${collageSlots.length}. Выделяй кадр и тяни фото внутри ячейки, углами можно приближать.`
               : selectedLayer?.type === 'image' && selectedLayer.kind === 'overlay'
                 ? `${width} x ${height} · ${Math.round(scale * 100)}% · стикер можно сразу тянуть за любое место, рамка и точки увеличены для пальца. Долгое удержание по канве откроет сохранение изображения.`
               : selectedLayer?.type === 'image' && dragArmedImageId === selectedLayer.id
