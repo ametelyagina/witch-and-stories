@@ -31,9 +31,12 @@ import {
   PRESETS,
 } from './editor/types';
 import {
+  COLLAGE_MAX_CORNER_RADIUS,
   COLLAGE_MAX_SPACING,
+  COLLAGE_MIN_CORNER_RADIUS,
   COLLAGE_MIN_SPACING,
   clampCollageImageGeometry,
+  getDefaultCollageCornerRadius,
   getDefaultCollageSpacing,
   getDefaultCollageOverscan,
   getCollageLayoutDefinition,
@@ -89,6 +92,9 @@ function App() {
   const [collageLayout, setCollageLayout] = useState<CollageLayout>('grid-4');
   const [collageSpacing, setCollageSpacing] = useState(() => getDefaultCollageSpacing(1080, 1920));
   const [collageDividersEnabled, setCollageDividersEnabled] = useState(true);
+  const [collageCornerRadius, setCollageCornerRadius] = useState(() =>
+    getDefaultCollageCornerRadius(1080, 1920),
+  );
   const [collageSwapSourceLayerId, setCollageSwapSourceLayerId] = useState<string | null>(null);
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
@@ -545,6 +551,7 @@ function App() {
         setCollageLayout(restored.collageLayout);
         setCollageSpacing(restored.collageSpacing);
         setCollageDividersEnabled(restored.collageDividersEnabled);
+        setCollageCornerRadius(restored.collageCornerRadius);
         setLayers(restored.layers);
         setFonts(restored.fonts);
         setCustomTextStylePresets(restored.textStylePresets);
@@ -562,6 +569,7 @@ function App() {
       collageLayout,
       collageSpacing,
       collageDividersEnabled,
+      collageCornerRadius,
       selectedLayerId,
       layers,
       fonts,
@@ -569,7 +577,7 @@ function App() {
     };
     persistedStateRef.current = snapshot;
     void saveState(snapshot);
-  }, [collageDividersEnabled, collageLayout, collageSpacing, compositionMode, customTextStylePresets, fonts, isHydrated, layers, preset, selectedLayerId]);
+  }, [collageCornerRadius, collageDividersEnabled, collageLayout, collageSpacing, compositionMode, customTextStylePresets, fonts, isHydrated, layers, preset, selectedLayerId]);
 
   useEffect(() => {
     const flushPersistedState = () => {
@@ -1785,6 +1793,18 @@ function App() {
     setCollageSpacing(clampedSpacing);
   };
 
+  const handleCollageCornerRadiusChange = (nextRadius: number) => {
+    const clampedRadius = Math.min(
+      COLLAGE_MAX_CORNER_RADIUS,
+      Math.max(COLLAGE_MIN_CORNER_RADIUS, Math.round(nextRadius)),
+    );
+    if (clampedRadius === collageCornerRadius) {
+      return;
+    }
+
+    setCollageCornerRadius(clampedRadius);
+  };
+
   const handleToggleCollageDividers = (enabled: boolean) => {
     if (enabled === collageDividersEnabled) {
       return;
@@ -2162,6 +2182,8 @@ function App() {
       : !hasBackgroundLayer;
   const collageFrameLabel =
     collageSpacing === 0 ? 'Без рамки' : `${collageSpacing}px`;
+  const collageCornerRadiusLabel =
+    collageCornerRadius === 0 ? 'Прямые углы' : `${collageCornerRadius}px`;
   const collageSwapButtonLabel =
     isCollageSwapMode ? 'Отменить обмен' : 'Поменять местами';
   const collageSwapHelpText = isCollageSwapMode
@@ -2307,6 +2329,25 @@ function App() {
                         <span>Меньше</span>
                         <span>Больше</span>
                       </div>
+                      <div className="collage-spacing-inline-subsection">
+                        <div className="collage-spacing-inline-copy">
+                          <span>Скругление углов</span>
+                          <strong>{collageCornerRadiusLabel}</strong>
+                          <small>Скругляет углы у фото внутри белой рамки коллажа.</small>
+                        </div>
+                        <input
+                          type="range"
+                          min={COLLAGE_MIN_CORNER_RADIUS}
+                          max={COLLAGE_MAX_CORNER_RADIUS}
+                          value={collageCornerRadius}
+                          onChange={(event) => handleCollageCornerRadiusChange(Number(event.target.value))}
+                          aria-label="Скругление углов коллажа"
+                        />
+                        <div className="collage-spacing-inline-scale" aria-hidden="true">
+                          <span>Меньше</span>
+                          <span>Больше</span>
+                        </div>
+                      </div>
                     </div>
                   ) : null}
 
@@ -2316,7 +2357,7 @@ function App() {
                         ? collageSwapHelpText
                         : isCollageReady
                         ? `Коллаж собран: ${collageProgressLabel}. Рамка сейчас ${collageFrameLabel.toLowerCase()}, перегородки ${collageDividersEnabled ? 'включены' : 'выключены'}, а кадры можно спокойно двигать внутри ячеек.`
-                        : `${collageLayoutDefinition.label}: ${collageProgressLabel}. Добавляй фото по порядку, выделяй ячейку для замены и настраивай рамку с перегородками так, как тебе нравится.`}
+                        : `${collageLayoutDefinition.label}: ${collageProgressLabel}. Добавляй фото по порядку, выделяй ячейку для замены и настраивай рамку, перегородки и скругление углов так, как тебе нравится.`}
                     </p>
                   ) : null}
                 </>
@@ -2397,6 +2438,7 @@ function App() {
             filledCollageSlotIds={Array.from(filledCollageSlotIds)}
             collageSpacing={collageSpacing}
             collageDividersEnabled={collageDividersEnabled}
+            collageCornerRadius={collageCornerRadius}
             isCompactPreview={isPhoneViewport && !isCanvasExpanded}
             isFullscreenCanvas={isPhoneViewport && isCanvasExpanded}
             fullscreenZoom={fullscreenZoom}

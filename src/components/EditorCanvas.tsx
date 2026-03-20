@@ -74,6 +74,89 @@ function areSelectionMetricsEqual(
   );
 }
 
+type CornerRadiusValue = number | [number, number, number, number];
+
+function normalizeCornerRadius(
+  cornerRadius: CornerRadiusValue,
+  width: number,
+  height: number,
+): [number, number, number, number] {
+  const radii = typeof cornerRadius === 'number'
+    ? [cornerRadius, cornerRadius, cornerRadius, cornerRadius]
+    : cornerRadius;
+  const maxRadius = Math.max(0, Math.min(width, height) / 2);
+
+  return radii.map((value) => clampToFrame(value, 0, maxRadius)) as [
+    number,
+    number,
+    number,
+    number,
+  ];
+}
+
+function insetCornerRadius(cornerRadius: CornerRadiusValue, inset: number): CornerRadiusValue {
+  if (inset <= 0) {
+    return cornerRadius;
+  }
+
+  if (typeof cornerRadius === 'number') {
+    return Math.max(0, cornerRadius - inset);
+  }
+
+  return cornerRadius.map((value) => Math.max(0, value - inset)) as [
+    number,
+    number,
+    number,
+    number,
+  ];
+}
+
+function drawRoundedRectPath(
+  context: Konva.Context,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  cornerRadius: CornerRadiusValue,
+) {
+  const [topLeft, topRight, bottomRight, bottomLeft] = normalizeCornerRadius(
+    cornerRadius,
+    width,
+    height,
+  );
+
+  context.beginPath();
+  context.moveTo(x + topLeft, y);
+  context.lineTo(x + width - topRight, y);
+  if (topRight > 0) {
+    context.arcTo(x + width, y, x + width, y + topRight, topRight);
+  } else {
+    context.lineTo(x + width, y);
+  }
+
+  context.lineTo(x + width, y + height - bottomRight);
+  if (bottomRight > 0) {
+    context.arcTo(x + width, y + height, x + width - bottomRight, y + height, bottomRight);
+  } else {
+    context.lineTo(x + width, y + height);
+  }
+
+  context.lineTo(x + bottomLeft, y + height);
+  if (bottomLeft > 0) {
+    context.arcTo(x, y + height, x, y + height - bottomLeft, bottomLeft);
+  } else {
+    context.lineTo(x, y + height);
+  }
+
+  context.lineTo(x, y + topLeft);
+  if (topLeft > 0) {
+    context.arcTo(x, y, x + topLeft, y, topLeft);
+  } else {
+    context.lineTo(x, y);
+  }
+  context.closePath();
+}
+
 type EditorCanvasProps = {
   stageRef: RefObject<Konva.Stage | null>;
   containerRef: RefObject<HTMLDivElement | null>;
@@ -91,6 +174,7 @@ type EditorCanvasProps = {
   filledCollageSlotIds: string[];
   collageSpacing: number;
   collageDividersEnabled: boolean;
+  collageCornerRadius: number;
   isCompactPreview: boolean;
   isFullscreenCanvas: boolean;
   fullscreenZoom: number;
@@ -159,6 +243,7 @@ export function EditorCanvas({
   filledCollageSlotIds,
   collageSpacing,
   collageDividersEnabled,
+  collageCornerRadius,
   isCompactPreview,
   isFullscreenCanvas,
   fullscreenZoom,
@@ -236,6 +321,23 @@ export function EditorCanvas({
   const collageFilledSlotIds = new Set(filledCollageSlotIds);
   const isCollageSpacingless =
     compositionMode === 'collage' && (collageSpacing === 0 || !collageDividersEnabled);
+  const hasVisibleCollageFrame = compositionMode === 'collage' && collageSpacing > 0;
+  const collageBounds = collageSlots.length
+    ? collageSlots.reduce(
+        (bounds, slot) => ({
+          left: Math.min(bounds.left, slot.x),
+          top: Math.min(bounds.top, slot.y),
+          right: Math.max(bounds.right, slot.x + slot.width),
+          bottom: Math.max(bounds.bottom, slot.y + slot.height),
+        }),
+        {
+          left: collageSlots[0].x,
+          top: collageSlots[0].y,
+          right: collageSlots[0].x + collageSlots[0].width,
+          bottom: collageSlots[0].y + collageSlots[0].height,
+        },
+      )
+    : null;
   const [selectionMetrics, setSelectionMetrics] = useState<SelectionMetrics | null>(null);
   const [isSelectionColorPicking, setIsSelectionColorPicking] = useState(false);
   const visualScale = isFullscreenCanvas ? scale * fullscreenZoom : scale;
@@ -1069,9 +1171,36 @@ export function EditorCanvas({
   const getCollageSlotById = (slotId: string | undefined) =>
     collageSlots.find((slot) => slot.id === slotId) ?? null;
 
+  const getCollageSlotCornerRadius = (slot: CollageSlot): CornerRadiusValue => {
+    if (!hasVisibleCollageFrame || collageCornerRadius <= 0) {
+      return 0;
+    }
+
+    const nextRadius = Math.min(collageCornerRadius, slot.width / 2, slot.height / 2);
+    if (nextRadius <= 0) {
+      return 0;
+    }
+
+    if (collageDividersEnabled || !collageBounds) {
+      return nextRadius;
+    }
+
+    const isLeftEdge = Math.abs(slot.x - collageBounds.left) < 0.5;
+    const isTopEdge = Math.abs(slot.y - collageBounds.top) < 0.5;
+    const isRightEdge = Math.abs(slot.x + slot.width - collageBounds.right) < 0.5;
+    const isBottomEdge = Math.abs(slot.y + slot.height - collageBounds.bottom) < 0.5;
+
+    return [
+      isLeftEdge && isTopEdge ? nextRadius : 0,
+      isRightEdge && isTopEdge ? nextRadius : 0,
+      isRightEdge && isBottomEdge ? nextRadius : 0,
+      isLeftEdge && isBottomEdge ? nextRadius : 0,
+    ];
+  };
+
   const renderCollageSlot = (slot: CollageSlot) => {
     const isFilled = collageFilledSlotIds.has(slot.id);
-    const slotCornerRadius = isCollageSpacingless ? 0 : 26;
+    const slotCornerRadius = getCollageSlotCornerRadius(slot);
     const slotFill =
       isFilled && isCollageSpacingless ? 'transparent' : isFilled ? 'rgba(255,248,240,0.02)' : 'rgba(255,248,240,0.13)';
     const slotStroke =
@@ -1129,7 +1258,7 @@ export function EditorCanvas({
     const inset = isCollageSpacingless && isFilled ? 1.5 : 0;
     const outlineWidth = Math.max(0, slot.width - inset * 2);
     const outlineHeight = Math.max(0, slot.height - inset * 2);
-    const outlineCornerRadius = isCollageSpacingless ? 0 : 26;
+    const outlineCornerRadius = insetCornerRadius(getCollageSlotCornerRadius(slot), inset);
 
     return (
       <Rect
@@ -1365,14 +1494,19 @@ export function EditorCanvas({
     }
 
     if (layer.kind === 'collage' && collageSlot) {
+      const slotCornerRadius = getCollageSlotCornerRadius(collageSlot);
       return (
         <Group
           key={`${layer.id}-slot`}
-          clip={{
-            x: collageSlot.x,
-            y: collageSlot.y,
-            width: collageSlot.width,
-            height: collageSlot.height,
+          clipFunc={(context) => {
+            drawRoundedRectPath(
+              context,
+              collageSlot.x,
+              collageSlot.y,
+              collageSlot.width,
+              collageSlot.height,
+              slotCornerRadius,
+            );
           }}
         >
           <KonvaImage

@@ -11,7 +11,7 @@ import {
 } from '../editor/types';
 import { isBuiltInFontFamily, TextStylePreset } from '../editor/textPresets';
 import { DEFAULT_TEXT_BACKGROUND_COLOR, DEFAULT_TEXT_BACKGROUND_STYLE } from '../editor/textHighlight';
-import { getDefaultCollageSpacing } from '../editor/collage';
+import { getDefaultCollageCornerRadius, getDefaultCollageSpacing } from '../editor/collage';
 import { loadImage } from './media';
 
 type PersistedEnvelope = {
@@ -20,6 +20,7 @@ type PersistedEnvelope = {
   collageLayout?: CollageLayout;
   collageSpacing?: number;
   collageDividersEnabled?: boolean;
+  collageCornerRadius?: number;
   selectedLayerId?: string | null;
   fonts?: unknown[];
   textStylePresets?: unknown[];
@@ -434,6 +435,7 @@ export type EditorPersistedState = {
   collageLayout: CollageLayout;
   collageSpacing: number;
   collageDividersEnabled: boolean;
+  collageCornerRadius: number;
   selectedLayerId: string | null;
   layers: Layer[];
   fonts: UploadedFont[];
@@ -465,6 +467,10 @@ export const readState = async (): Promise<EditorPersistedState | null> => {
         : getDefaultCollageSpacing(1080, restoredPreset === 'carousel' ? 1350 : 1920);
     const restoredCollageDividersEnabled =
       typeof parsed.collageDividersEnabled === 'boolean' ? parsed.collageDividersEnabled : true;
+    const restoredCollageCornerRadius =
+      typeof parsed.collageCornerRadius === 'number' && Number.isFinite(parsed.collageCornerRadius)
+        ? parsed.collageCornerRadius
+        : getDefaultCollageCornerRadius(1080, restoredPreset === 'carousel' ? 1350 : 1920);
     const restoredFonts = [
       DEFAULT_FONT,
       ...(Array.isArray(parsed.fonts)
@@ -553,6 +559,7 @@ export const readState = async (): Promise<EditorPersistedState | null> => {
       collageLayout: restoredCollageLayout,
       collageSpacing: restoredCollageSpacing,
       collageDividersEnabled: restoredCollageDividersEnabled,
+      collageCornerRadius: restoredCollageCornerRadius,
       selectedLayerId: hasSelectedLayer ? nextSelectedLayerId : null,
       layers: normalized,
       fonts: restoredFonts,
@@ -579,6 +586,7 @@ export const saveState = async (state: EditorPersistedState) => {
     collageLayout: state.collageLayout,
     collageSpacing: state.collageSpacing,
     collageDividersEnabled: state.collageDividersEnabled,
+    collageCornerRadius: state.collageCornerRadius,
     selectedLayerId: state.selectedLayerId,
     fonts: state.fonts,
     textStylePresets: state.textStylePresets,

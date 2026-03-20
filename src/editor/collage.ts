@@ -72,11 +72,16 @@ export const getDefaultCollageOverscan = (layout: CollageLayout) => {
 };
 export const COLLAGE_MIN_SPACING = 0;
 export const COLLAGE_MAX_SPACING = 64;
+export const COLLAGE_MIN_CORNER_RADIUS = 0;
+export const COLLAGE_MAX_CORNER_RADIUS = 72;
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 export const getDefaultCollageSpacing = (width: number, height: number) =>
   clamp(Math.round(Math.min(width, height) * 0.022), 18, 28);
+
+export const getDefaultCollageCornerRadius = (width: number, height: number) =>
+  clamp(Math.round(Math.min(width, height) * 0.024), 18, 28);
 
 const getFrameMetrics = (spacing: number, dividersEnabled = true) => {
   const frameSpacing = clamp(Math.round(spacing), COLLAGE_MIN_SPACING, COLLAGE_MAX_SPACING);

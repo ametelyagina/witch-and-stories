@@ -492,6 +492,13 @@ input[type='color'] {
   background: rgb(255 250 246 / 82%);
 }
 
+.collage-spacing-inline-subsection {
+  display: grid;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgb(197 176 153 / 45%);
+}
+
 .collage-spacing-inline-head,
 .collage-spacing-inline-scale {
   display: flex;
@@ -1905,6 +1912,10 @@ canvas {
   .collage-spacing-inline-control {
     width: 100%;
     padding: 12px 14px;
+  }
+
+  .collage-spacing-inline-subsection {
+    padding-top: 12px;
   }
 
   .collage-spacing-inline-head {
