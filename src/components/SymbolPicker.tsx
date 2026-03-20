@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
 
-import { SYMBOL_GROUPS } from '../editor/symbols';
+import { SYMBOL_GROUPS, type SymbolOption } from '../editor/symbols';
 
 type SymbolPickerProps = {
   open: boolean;
   onClose: () => void;
-  onPick: (symbol: string) => void;
+  onPick: (symbol: SymbolOption) => void;
 };
 
 export function SymbolPicker({ open, onClose, onPick }: SymbolPickerProps) {
@@ -66,11 +66,13 @@ export function SymbolPicker({ open, onClose, onPick }: SymbolPickerProps) {
               <div className="symbol-picker-grid">
                 {group.items.map((item) => (
                   <button
-                    key={`${group.id}-${item.value}`}
+                    key={`${group.id}-${item.value}-${item.label}`}
                     type="button"
-                    className="ghost symbol-picker-button"
+                    className={`ghost symbol-picker-button${
+                      item.sizeMultiplier && item.sizeMultiplier < 1 ? ' symbol-picker-button--short' : ''
+                    }`}
                     aria-label={`${item.label}: ${item.value}`}
-                    onClick={() => onPick(item.value)}
+                    onClick={() => onPick(item)}
                   >
                     <strong>{item.value}</strong>
                     <span>{item.label}</span>

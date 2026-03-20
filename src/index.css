@@ -1616,10 +1616,18 @@ canvas {
   border-color: rgb(255 233 217 / 12%);
 }
 
+.symbol-picker-button--short {
+  min-height: 98px;
+}
+
 .symbol-picker-button strong {
   font-size: 38px;
   line-height: 1;
   color: #fff6ef;
+}
+
+.symbol-picker-button--short strong {
+  font-size: 28px;
 }
 
 .symbol-picker-button span {

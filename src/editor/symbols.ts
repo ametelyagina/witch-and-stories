@@ -1,6 +1,7 @@
 export type SymbolOption = {
   value: string;
   label: string;
+  sizeMultiplier?: number;
 };
 
 export type SymbolGroup = {
@@ -20,6 +21,10 @@ export const SYMBOL_GROUPS: SymbolGroup[] = [
       { value: '←', label: 'Влево' },
       { value: '↑', label: 'Вверх' },
       { value: '↓', label: 'Вниз' },
+      { value: '→', label: 'Короткая вправо', sizeMultiplier: 0.5 },
+      { value: '←', label: 'Короткая влево', sizeMultiplier: 0.5 },
+      { value: '↑', label: 'Короткая вверх', sizeMultiplier: 0.5 },
+      { value: '↓', label: 'Короткая вниз', sizeMultiplier: 0.5 },
       { value: '↗', label: 'Вверх-вправо' },
       { value: '↖', label: 'Вверх-влево' },
       { value: '↘', label: 'Вниз-вправо' },

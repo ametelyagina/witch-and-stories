@@ -17,6 +17,7 @@ import { EditorCanvas } from './components/EditorCanvas';
 import { FormatPicker } from './components/FormatPicker';
 import { PropertiesPanel } from './components/PropertiesPanel';
 import { SymbolPicker } from './components/SymbolPicker';
+import { type SymbolOption } from './editor/symbols';
 import {
   CollageLayout,
   CompositionMode,
@@ -1227,12 +1228,13 @@ function App() {
     setIsSymbolPickerOpen(true);
   };
 
-  const handleAddSymbol = (symbol: string) => {
-    const baseSize = Math.round(Math.min(stageSize.width, stageSize.height) * 0.16);
-    const width = Math.max(180, Math.round(baseSize * 1.55));
-    const height = Math.max(180, Math.round(baseSize * 1.3));
+  const handleAddSymbol = (symbol: SymbolOption) => {
+    const sizeMultiplier = symbol.sizeMultiplier ?? 1;
+    const baseSize = Math.round(Math.min(stageSize.width, stageSize.height) * 0.16 * sizeMultiplier);
+    const width = Math.max(96, Math.round(Math.max(180 * sizeMultiplier, baseSize * 1.55)));
+    const height = Math.max(96, Math.round(Math.max(180 * sizeMultiplier, baseSize * 1.3)));
 
-    addTextLayer(symbol, {
+    addTextLayer(symbol.value, {
       openEditor: false,
       fontStyle: 'bold',
       fontSize: baseSize,
