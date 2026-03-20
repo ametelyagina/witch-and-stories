@@ -227,6 +227,8 @@ export function EditorCanvas({
   const selectedCanvasLayer =
     selectedLayer?.type === 'image' && selectedLayer.kind === 'background' ? null : selectedLayer;
   const selectedTextLayer = isTextLayer(selectedLayer) ? selectedLayer : null;
+  const isSelectedCollageLayer =
+    selectedCanvasLayer?.type === 'image' && selectedCanvasLayer.kind === 'collage';
   const collageFilledSlotIds = new Set(filledCollageSlotIds);
   const [selectionMetrics, setSelectionMetrics] = useState<SelectionMetrics | null>(null);
   const visualScale = isFullscreenCanvas ? scale * fullscreenZoom : scale;
@@ -985,8 +987,6 @@ export function EditorCanvas({
 
   const renderCollageSlot = (slot: CollageSlot) => {
     const isFilled = collageFilledSlotIds.has(slot.id);
-    const isSelected =
-      selectedLayer?.type === 'image' && selectedLayer.kind === 'collage' && selectedLayer.slotId === slot.id;
 
     return (
       <Group key={slot.id} listening={false}>
@@ -997,8 +997,8 @@ export function EditorCanvas({
           height={slot.height}
           cornerRadius={26}
           fill={isFilled ? 'rgba(255,248,240,0.02)' : 'rgba(255,248,240,0.13)'}
-          stroke={isSelected ? '#d9683c' : 'rgba(255,248,240,0.42)'}
-          strokeWidth={isSelected ? 3 : 1.4}
+          stroke={isFilled ? 'rgba(255,248,240,0.08)' : 'rgba(255,248,240,0.42)'}
+          strokeWidth={1.4}
           dash={isFilled ? undefined : [16, 10]}
         />
         {!isFilled ? (
@@ -1025,6 +1025,26 @@ export function EditorCanvas({
           </>
         ) : null}
       </Group>
+    );
+  };
+
+  const renderCollageSlotOutline = (slot: CollageSlot) => {
+    const isSelected =
+      selectedLayer?.type === 'image' && selectedLayer.kind === 'collage' && selectedLayer.slotId === slot.id;
+
+    return (
+      <Rect
+        key={`${slot.id}-outline`}
+        x={slot.x}
+        y={slot.y}
+        width={slot.width}
+        height={slot.height}
+        cornerRadius={26}
+        fillEnabled={false}
+        stroke={isSelected ? '#d9683c' : 'rgba(255,248,240,0.28)'}
+        strokeWidth={isSelected ? 3.2 : 1}
+        listening={false}
+      />
     );
   };
 
@@ -1595,6 +1615,9 @@ export function EditorCanvas({
                         ? renderImageLayer(layer)
                         : null,
                     )}
+                    {compositionMode === 'collage'
+                      ? collageSlots.map((slot) => renderCollageSlotOutline(slot))
+                      : null}
                   </Group>
                   <Group x={canvasOffsetX} y={canvasOffsetY}>
                     {layers.map((layer) => {
@@ -1605,7 +1628,7 @@ export function EditorCanvas({
                       return renderTextLayer(layer);
                     })}
                   </Group>
-                  {!isMultiTouchActive ? (
+                  {!isMultiTouchActive && !isSelectedCollageLayer ? (
                     <Transformer
                       ref={transformerRef}
                       rotateEnabled={!(selectedLayer?.type === 'image' && selectedLayer.kind === 'collage')}
@@ -1639,7 +1662,7 @@ export function EditorCanvas({
             </div>
           </div>
 
-          {selectedCanvasLayer && selectionToolbarStyle && !isEditingSelectedText && !isMultiTouchActive ? (
+          {selectedCanvasLayer && selectionToolbarStyle && !isEditingSelectedText && !isMultiTouchActive && !isSelectedCollageLayer ? (
             <>
               <div className="text-selection-toolbar" style={selectionToolbarStyle}>
                 <button
@@ -1923,8 +1946,8 @@ export function EditorCanvas({
             {layers.length === 0 && compositionMode !== 'collage'
               ? `Пустая канва ${width} x ${height}. Перетащите фото сюда, вставьте из буфера или нажмите “Добавить фон”.`
               : compositionMode === 'collage' && collageSlots.length > 0
-                ? `${width} x ${height} · ${Math.round(scale * 100)}% · коллаж ${filledCollageSlotIds.length}/${collageSlots.length}. Выделяй кадр и тяни фото внутри ячейки, углами можно приближать.`
-              : selectedLayer?.type === 'image' && selectedLayer.kind === 'overlay'
+                ? `${width} x ${height} · ${Math.round(scale * 100)}% · коллаж ${filledCollageSlotIds.length}/${collageSlots.length}. Выделяй кадр и тяни фото внутри ячейки, запас под движение уже добавлен.`
+                : selectedLayer?.type === 'image' && selectedLayer.kind === 'overlay'
                 ? `${width} x ${height} · ${Math.round(scale * 100)}% · стикер можно сразу тянуть за любое место, рамка и точки увеличены для пальца. Долгое удержание по канве откроет сохранение изображения.`
               : selectedLayer?.type === 'image' && dragArmedImageId === selectedLayer.id
                 ? `${width} x ${height} · ${Math.round(scale * 100)}% · фото разблокировано для перемещения, после drag блокировка вернётся. Долгое удержание по канве откроет сохранение изображения.`

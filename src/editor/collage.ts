@@ -41,13 +41,21 @@ export const COLLAGE_LAYOUTS: CollageLayoutDefinition[] = [
   },
 ];
 
+export const COLLAGE_DEFAULT_OVERSCAN = 1.08;
+export const COLLAGE_MIN_SPACING = 0;
+export const COLLAGE_MAX_SPACING = 64;
+
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
-const getFrameMetrics = (width: number, height: number) => {
-  const base = Math.min(width, height);
-  const outer = clamp(Math.round(base * 0.025), 22, 34);
-  const gap = clamp(Math.round(base * 0.018), 14, 26);
-  return { outer, gap };
+export const getDefaultCollageSpacing = (width: number, height: number) =>
+  clamp(Math.round(Math.min(width, height) * 0.022), 18, 28);
+
+const getFrameMetrics = (spacing: number) => {
+  const frameSpacing = clamp(Math.round(spacing), COLLAGE_MIN_SPACING, COLLAGE_MAX_SPACING);
+  return {
+    outer: frameSpacing,
+    gap: frameSpacing,
+  };
 };
 
 export const getCollageLayoutDefinition = (layout: CollageLayout) =>
@@ -57,8 +65,9 @@ export const getCollageSlots = (
   layout: CollageLayout,
   width: number,
   height: number,
+  spacing = getDefaultCollageSpacing(width, height),
 ): CollageSlot[] => {
-  const { outer, gap } = getFrameMetrics(width, height);
+  const { outer, gap } = getFrameMetrics(spacing);
 
   if (layout === 'stack-2') {
     const slotWidth = width - outer * 2;
@@ -138,10 +147,11 @@ export const getSlotCoverPlacement = (
   slot: Pick<CollageSlot, 'x' | 'y' | 'width' | 'height'>,
   sourceWidth: number,
   sourceHeight: number,
+  { overscan = 1 }: { overscan?: number } = {},
 ) => {
   const safeSourceWidth = Math.max(1, sourceWidth);
   const safeSourceHeight = Math.max(1, sourceHeight);
-  const scale = Math.max(slot.width / safeSourceWidth, slot.height / safeSourceHeight);
+  const scale = Math.max(slot.width / safeSourceWidth, slot.height / safeSourceHeight) * Math.max(1, overscan);
   const width = safeSourceWidth * scale;
   const height = safeSourceHeight * scale;
 

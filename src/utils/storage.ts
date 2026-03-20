@@ -11,12 +11,14 @@ import {
 } from '../editor/types';
 import { isBuiltInFontFamily, TextStylePreset } from '../editor/textPresets';
 import { DEFAULT_TEXT_BACKGROUND_COLOR, DEFAULT_TEXT_BACKGROUND_STYLE } from '../editor/textHighlight';
+import { getDefaultCollageSpacing } from '../editor/collage';
 import { loadImage } from './media';
 
 type PersistedEnvelope = {
   preset?: Preset;
   compositionMode?: CompositionMode;
   collageLayout?: CollageLayout;
+  collageSpacing?: number;
   selectedLayerId?: string | null;
   fonts?: unknown[];
   textStylePresets?: unknown[];
@@ -429,6 +431,7 @@ export type EditorPersistedState = {
   preset: Preset;
   compositionMode: CompositionMode;
   collageLayout: CollageLayout;
+  collageSpacing: number;
   selectedLayerId: string | null;
   layers: Layer[];
   fonts: UploadedFont[];
@@ -450,6 +453,10 @@ export const readState = async (): Promise<EditorPersistedState | null> => {
         : parsed.collageLayout === 'stack-3'
           ? 'stack-3'
           : 'grid-4';
+    const restoredCollageSpacing =
+      typeof parsed.collageSpacing === 'number' && Number.isFinite(parsed.collageSpacing)
+        ? parsed.collageSpacing
+        : getDefaultCollageSpacing(1080, restoredPreset === 'carousel' ? 1350 : 1920);
     const restoredFonts = [
       DEFAULT_FONT,
       ...(Array.isArray(parsed.fonts)
@@ -536,6 +543,7 @@ export const readState = async (): Promise<EditorPersistedState | null> => {
           ? 'collage'
           : 'single',
       collageLayout: restoredCollageLayout,
+      collageSpacing: restoredCollageSpacing,
       selectedLayerId: hasSelectedLayer ? nextSelectedLayerId : null,
       layers: normalized,
       fonts: restoredFonts,
@@ -560,6 +568,7 @@ export const saveState = async (state: EditorPersistedState) => {
     preset: state.preset,
     compositionMode: state.compositionMode,
     collageLayout: state.collageLayout,
+    collageSpacing: state.collageSpacing,
     selectedLayerId: state.selectedLayerId,
     fonts: state.fonts,
     textStylePresets: state.textStylePresets,

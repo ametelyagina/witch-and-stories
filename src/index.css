@@ -516,6 +516,40 @@ input[type='color'] {
   text-align: left;
 }
 
+.collage-spacing-control {
+  width: min(100%, 720px);
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 22px;
+  border: 1px solid rgb(197 176 153 / 72%);
+  background: rgb(255 255 255 / 58%);
+}
+
+.collage-spacing-head,
+.collage-spacing-scale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.collage-spacing-head span {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.collage-spacing-head strong {
+  font-size: 13px;
+  color: var(--accent-deep);
+}
+
+.collage-spacing-scale {
+  font-size: 11px;
+  color: var(--muted);
+}
+
 .canvas-toolbar-note {
   margin: 0;
   max-width: 720px;
@@ -1470,7 +1504,8 @@ canvas {
 
   .canvas-toolbar .preset-strip,
   .canvas-toolbar .composition-strip,
-  .canvas-toolbar .collage-layout-strip {
+  .canvas-toolbar .collage-layout-strip,
+  .canvas-toolbar .collage-spacing-control {
     width: 100%;
   }
 
@@ -1480,6 +1515,10 @@ canvas {
 
   .collage-layout-strip {
     grid-template-columns: 1fr;
+  }
+
+  .collage-spacing-control {
+    padding: 12px 14px;
   }
 
   .canvas-column--compact .canvas-wrap {

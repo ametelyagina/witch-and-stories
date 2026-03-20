@@ -28,8 +28,12 @@ import {
   PRESETS,
 } from './editor/types';
 import {
+  COLLAGE_MAX_SPACING,
+  COLLAGE_MIN_SPACING,
   clampCollageImageGeometry,
+  COLLAGE_DEFAULT_OVERSCAN,
   COLLAGE_LAYOUTS,
+  getDefaultCollageSpacing,
   getCollageLayoutDefinition,
   getCollageSlots,
   getSlotCoverPlacement,
@@ -79,6 +83,7 @@ function App() {
   const [preset, setPreset] = useState<Preset>('story');
   const [compositionMode, setCompositionMode] = useState<CompositionMode>('single');
   const [collageLayout, setCollageLayout] = useState<CollageLayout>('grid-4');
+  const [collageSpacing, setCollageSpacing] = useState(() => getDefaultCollageSpacing(1080, 1920));
   const [layers, setLayers] = useState<Layer[]>([]);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [dragArmedImageId, setDragArmedImageId] = useState<string | null>(null);
@@ -114,8 +119,8 @@ function App() {
 
   const stageSize = useMemo(() => getPresetByKey(preset), [preset]);
   const collageSlots = useMemo(
-    () => getCollageSlots(collageLayout, stageSize.width, stageSize.height),
-    [collageLayout, stageSize.height, stageSize.width],
+    () => getCollageSlots(collageLayout, stageSize.width, stageSize.height, collageSpacing),
+    [collageLayout, collageSpacing, stageSize.height, stageSize.width],
   );
   const collageLayoutDefinition = useMemo(
     () => getCollageLayoutDefinition(collageLayout),
@@ -222,7 +227,9 @@ function App() {
         height: 100,
       },
     });
-    const placement = getSlotCoverPlacement(slot, sourceSize.width, sourceSize.height);
+    const placement = getSlotCoverPlacement(slot, sourceSize.width, sourceSize.height, {
+      overscan: COLLAGE_DEFAULT_OVERSCAN,
+    });
 
     return createImageLayer(prepared.image, prepared.dataUrl, {
       kind: 'collage',
@@ -427,6 +434,7 @@ function App() {
         setPreset(restored.preset);
         setCompositionMode(restored.compositionMode);
         setCollageLayout(restored.collageLayout);
+        setCollageSpacing(restored.collageSpacing);
         setLayers(restored.layers);
         setFonts(restored.fonts);
         setCustomTextStylePresets(restored.textStylePresets);
@@ -442,6 +450,7 @@ function App() {
       preset,
       compositionMode,
       collageLayout,
+      collageSpacing,
       selectedLayerId,
       layers,
       fonts,
@@ -449,7 +458,7 @@ function App() {
     };
     persistedStateRef.current = snapshot;
     void saveState(snapshot);
-  }, [collageLayout, compositionMode, customTextStylePresets, fonts, isHydrated, layers, preset, selectedLayerId]);
+  }, [collageLayout, collageSpacing, compositionMode, customTextStylePresets, fonts, isHydrated, layers, preset, selectedLayerId]);
 
   useEffect(() => {
     const flushPersistedState = () => {
@@ -836,7 +845,9 @@ function App() {
     }
 
     const sourceSize = getImageSourceSize(selectedLayer);
-    const placement = getSlotCoverPlacement(slot, sourceSize.width, sourceSize.height);
+    const placement = getSlotCoverPlacement(slot, sourceSize.width, sourceSize.height, {
+      overscan: COLLAGE_DEFAULT_OVERSCAN,
+    });
     updateLayer(selectedLayer.id, {
       x: placement.x,
       y: placement.y,
@@ -1342,7 +1353,12 @@ function App() {
 
     if (compositionMode === 'collage' && collageLayers.length > 0) {
       const nextStageSize = getPresetByKey(nextPreset);
-      const nextSlots = getCollageSlots(collageLayout, nextStageSize.width, nextStageSize.height);
+      const nextSlots = getCollageSlots(
+        collageLayout,
+        nextStageSize.width,
+        nextStageSize.height,
+        collageSpacing,
+      );
       setLayers((prev) => remapCollageLayers(prev, collageSlots, nextSlots));
     }
 
@@ -1397,7 +1413,7 @@ function App() {
       return;
     }
 
-    const nextSlots = getCollageSlots(nextLayout, stageSize.width, stageSize.height);
+    const nextSlots = getCollageSlots(nextLayout, stageSize.width, stageSize.height, collageSpacing);
     const extraImages = Math.max(0, collageLayers.length - nextSlots.length);
     if (extraImages > 0) {
       const shouldSwitch = window.confirm(
@@ -1414,6 +1430,20 @@ function App() {
 
     setCollageLayout(nextLayout);
     dismissSelectionUi();
+  };
+
+  const handleCollageSpacingChange = (nextSpacing: number) => {
+    const clampedSpacing = Math.min(COLLAGE_MAX_SPACING, Math.max(COLLAGE_MIN_SPACING, Math.round(nextSpacing)));
+    if (clampedSpacing === collageSpacing) {
+      return;
+    }
+
+    const nextSlots = getCollageSlots(collageLayout, stageSize.width, stageSize.height, clampedSpacing);
+    if (collageLayers.length > 0) {
+      setLayers((prev) => remapCollageLayers(prev, collageSlots, nextSlots));
+    }
+
+    setCollageSpacing(clampedSpacing);
   };
 
   const handleCanvasDrop = async (files: File[]) => {
@@ -1772,6 +1802,8 @@ function App() {
     compositionMode === 'collage'
       ? !(selectedLayer?.type === 'image' && selectedLayer.kind === 'collage')
       : !hasBackgroundLayer;
+  const collageSpacingLabel =
+    collageSpacing === 0 ? 'Без полей' : `${collageSpacing}px`;
 
   return (
     <div className="app">
@@ -1897,10 +1929,31 @@ function App() {
                   ) : null}
 
                   {compositionMode === 'collage' ? (
+                    <div className="collage-spacing-control">
+                      <div className="collage-spacing-head">
+                        <span>Поля коллажа</span>
+                        <strong>{collageSpacingLabel}</strong>
+                      </div>
+                      <input
+                        type="range"
+                        min={COLLAGE_MIN_SPACING}
+                        max={COLLAGE_MAX_SPACING}
+                        value={collageSpacing}
+                        onChange={(event) => handleCollageSpacingChange(Number(event.target.value))}
+                        aria-label="Ширина полей коллажа"
+                      />
+                      <div className="collage-spacing-scale" aria-hidden="true">
+                        <span>0</span>
+                        <span>Больше воздуха</span>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {compositionMode === 'collage' ? (
                     <p className="canvas-toolbar-note">
                       {isCollageReady
-                        ? `Коллаж собран: ${collageProgressLabel}. Можно двигать и приближать кадры прямо в ячейках.`
-                        : `${collageLayoutDefinition.label}: ${collageProgressLabel}. Добавляй фото по порядку или выдели ячейку, чтобы заменить её.`}
+                        ? `Коллаж собран: ${collageProgressLabel}. Поля сейчас ${collageSpacingLabel.toLowerCase()}, а кадры можно спокойно двигать внутри ячеек.`
+                        : `${collageLayoutDefinition.label}: ${collageProgressLabel}. Добавляй фото по порядку, выделяй ячейку для замены и подстрой ширину полей как тебе нравится.`}
                     </p>
                   ) : null}
                 </>
