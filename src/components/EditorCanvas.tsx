@@ -970,13 +970,32 @@ export function EditorCanvas({
     }
 
     if (selectedTextLayer) {
-      const minimumInlineEditorWidth = isFullscreenCanvas ? 260 : 220;
-      const minimumInlineEditorHeight = isFullscreenCanvas ? 164 : 132;
+      const minimumInlineEditorWidth = Math.min(frameWidth - 16, isFullscreenCanvas ? 360 : 300);
+      const minimumInlineEditorHeight = Math.min(frameHeight - 16, isFullscreenCanvas ? 280 : 220);
+      const inlineEditorWidth = Math.min(
+        frameWidth - 16,
+        Math.max(selectedTextLayer.width * visualScale + 48, minimumInlineEditorWidth),
+      );
+      const inlineEditorHeight = Math.min(
+        frameHeight - 16,
+        Math.max(selectedTextLayer.height * visualScale + 56, minimumInlineEditorHeight),
+      );
+      const inlineEditorLeft = clampToFrame(
+        (canvasOffsetX + selectedTextLayer.x) * visualScale + viewportPanX,
+        8,
+        Math.max(8, frameWidth - inlineEditorWidth - 8),
+      );
+      const inlineEditorTop = clampToFrame(
+        (canvasOffsetY + selectedTextLayer.y) * visualScale + viewportPanY,
+        8,
+        Math.max(8, frameHeight - inlineEditorHeight - 8),
+      );
+
       inlineEditorStyle = {
-        left: `${(canvasOffsetX + selectedTextLayer.x) * visualScale + viewportPanX}px`,
-        top: `${(canvasOffsetY + selectedTextLayer.y) * visualScale + viewportPanY}px`,
-        width: `${Math.max(selectedTextLayer.width * visualScale, minimumInlineEditorWidth)}px`,
-        height: `${Math.max(selectedTextLayer.height * visualScale, minimumInlineEditorHeight)}px`,
+        left: `${inlineEditorLeft}px`,
+        top: `${inlineEditorTop}px`,
+        width: `${inlineEditorWidth}px`,
+        height: `${inlineEditorHeight}px`,
         transform: `rotate(${selectedTextLayer.rotation}deg)`,
       };
     }
@@ -1909,13 +1928,15 @@ export function EditorCanvas({
                 value={selectedTextLayer.text}
                 style={{
                   fontFamily: selectedTextLayer.fontFamily,
-                  fontSize: `${Math.max(selectedTextLayer.fontSize * scale, 14)}px`,
+                  fontSize: `${Math.min(Math.max(selectedTextLayer.fontSize, 18), 40)}px`,
                   lineHeight: String(selectedTextLayer.lineHeight),
-                  color: selectedTextLayer.color,
+                  color: '#17120f',
                   textAlign: selectedTextLayer.align,
-                  letterSpacing: `${(selectedTextLayer.letterSpacing ?? 0) * scale}px`,
+                  letterSpacing: `${Math.min(Math.max(selectedTextLayer.letterSpacing ?? 0, -1), 12)}px`,
                   fontStyle: selectedTextLayer.fontStyle?.includes('italic') ? 'italic' : 'normal',
                   fontWeight: selectedTextLayer.fontStyle?.includes('bold') ? 700 : 500,
+                  caretColor: '#17120f',
+                  backgroundColor: '#ffffff',
                 }}
                 onChange={(event) => onInlineTextChange(selectedTextLayer.id, event.target.value)}
                 onKeyDown={(event) => {

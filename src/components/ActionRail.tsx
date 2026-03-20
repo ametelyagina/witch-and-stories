@@ -6,6 +6,7 @@ type ActionRailProps = {
   isSecondaryImageActionDisabled: boolean;
   onPaste: () => void;
   onAddText: () => void;
+  onAddSymbol: () => void;
   onUploadFont: () => void;
   onUtilityImageAction: () => void;
   utilityImageLabel: string;
@@ -44,6 +45,7 @@ export function ActionRail({
   isSecondaryImageActionDisabled,
   onPaste,
   onAddText,
+  onAddSymbol,
   onUploadFont,
   onUtilityImageAction,
   utilityImageLabel,
@@ -64,6 +66,7 @@ export function ActionRail({
       />
       <ActionButton className="ghost" label="Вставить" onClick={onPaste} />
       <ActionButton className="secondary" label="Добавить текст" onClick={onAddText} />
+      <ActionButton className="ghost" label="Символы" onClick={onAddSymbol} />
       <ActionButton className="ghost" label="Импорт шрифта" onClick={onUploadFont} />
       <ActionButton
         className="ghost"

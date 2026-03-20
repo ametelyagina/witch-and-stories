@@ -15,6 +15,7 @@ import { TopBar } from './components/TopBar';
 import { ActionRail } from './components/ActionRail';
 import { EditorCanvas } from './components/EditorCanvas';
 import { PropertiesPanel } from './components/PropertiesPanel';
+import { SymbolPicker } from './components/SymbolPicker';
 import {
   CollageLayout,
   CompositionMode,
@@ -107,6 +108,7 @@ function App() {
     dataUrl: string;
     image: HTMLImageElement;
   } | null>(null);
+  const [isSymbolPickerOpen, setIsSymbolPickerOpen] = useState(false);
   const [savePreviewUrl, setSavePreviewUrl] = useState<string | null>(null);
   const [isPreparingSavePreview, setIsPreparingSavePreview] = useState(false);
 
@@ -1055,35 +1057,85 @@ function App() {
     setPendingImage(null);
   };
 
-  const addTextLayer = (value = 'Новый текст') => {
+  const addTextLayer = (
+    value = 'Новый текст',
+    options: {
+      openEditor?: boolean;
+      fontFamily?: string;
+      fontStyle?: 'normal' | 'bold' | 'italic' | 'bold italic';
+      letterSpacing?: number;
+      fontSize?: number;
+      lineHeight?: number;
+      align?: 'left' | 'center' | 'right';
+      color?: string;
+      backgroundEnabled?: boolean;
+      backgroundColor?: string;
+      backgroundStyle?: TextBackgroundStyle;
+      stylePresetId?: string;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      rotation?: number;
+    } = {},
+  ) => {
     const id = nanoid();
     const layer: Layer = {
       id,
       type: 'text',
       text: value,
-      fontFamily: defaultTextPreset?.family ?? fonts[0].family,
-      fontStyle: defaultTextPreset?.fontStyle ?? 'bold',
-      letterSpacing: defaultTextPreset?.letterSpacing ?? 0,
-      fontSize: defaultTextPreset?.fontSize ?? 84,
-      lineHeight: defaultTextPreset?.lineHeight ?? 1.2,
-      align: defaultTextPreset?.align ?? 'left',
-      color: defaultTextPreset?.color ?? '#241d17',
-      backgroundEnabled: false,
-      backgroundColor: DEFAULT_TEXT_BACKGROUND_COLOR,
-      backgroundStyle: DEFAULT_TEXT_BACKGROUND_STYLE,
-      stylePresetId: defaultTextPreset?.id,
-      x: stageSize.width * 0.08,
-      y: stageSize.height * 0.12,
-      width: stageSize.width * 0.82,
-      height: 220,
-      rotation: 0,
+      fontFamily: options.fontFamily ?? defaultTextPreset?.family ?? fonts[0].family,
+      fontStyle: options.fontStyle ?? defaultTextPreset?.fontStyle ?? 'bold',
+      letterSpacing: options.letterSpacing ?? defaultTextPreset?.letterSpacing ?? 0,
+      fontSize: options.fontSize ?? defaultTextPreset?.fontSize ?? 84,
+      lineHeight: options.lineHeight ?? defaultTextPreset?.lineHeight ?? 1.2,
+      align: options.align ?? defaultTextPreset?.align ?? 'left',
+      color: options.color ?? defaultTextPreset?.color ?? '#241d17',
+      backgroundEnabled: options.backgroundEnabled ?? false,
+      backgroundColor: options.backgroundColor ?? DEFAULT_TEXT_BACKGROUND_COLOR,
+      backgroundStyle: options.backgroundStyle ?? DEFAULT_TEXT_BACKGROUND_STYLE,
+      stylePresetId:
+        options.stylePresetId ?? (Object.keys(options).length === 0 ? defaultTextPreset?.id : undefined),
+      x: options.x ?? stageSize.width * 0.08,
+      y: options.y ?? stageSize.height * 0.12,
+      width: options.width ?? stageSize.width * 0.82,
+      height: options.height ?? 220,
+      rotation: options.rotation ?? 0,
     } as Layer;
 
     setLayers((prev) => [...prev, layer]);
     setSelectedLayerId(id);
-    setEditingTextLayerId(id);
+    setEditingTextLayerId(options.openEditor === false ? null : id);
     setIsTextToolsOpen(false);
     setDragArmedImageId(null);
+  };
+
+  const handleOpenSymbolPicker = () => {
+    setIsTextToolsOpen(false);
+    setEditingTextLayerId(null);
+    setIsSymbolPickerOpen(true);
+  };
+
+  const handleAddSymbol = (symbol: string) => {
+    const baseSize = Math.round(Math.min(stageSize.width, stageSize.height) * 0.16);
+    const width = Math.max(180, Math.round(baseSize * 1.55));
+    const height = Math.max(180, Math.round(baseSize * 1.3));
+
+    addTextLayer(symbol, {
+      openEditor: false,
+      fontStyle: 'bold',
+      fontSize: baseSize,
+      lineHeight: 1,
+      align: 'center',
+      color: '#241d17',
+      backgroundEnabled: false,
+      stylePresetId: undefined,
+      x: (stageSize.width - width) / 2,
+      y: (stageSize.height - height) / 2,
+      width,
+      height,
+    });
+    setIsSymbolPickerOpen(false);
   };
 
   const setCanvasExpandedState = (nextExpanded: boolean) => {
@@ -1888,6 +1940,12 @@ function App() {
           />
         </Suspense>
 
+        <SymbolPicker
+          open={isSymbolPickerOpen}
+          onClose={() => setIsSymbolPickerOpen(false)}
+          onPick={handleAddSymbol}
+        />
+
         <ActionRail
           onPrimaryImageAction={() => imageInputRef.current?.click()}
           primaryImageLabel={primaryImageActionLabel}
@@ -1896,6 +1954,7 @@ function App() {
           isSecondaryImageActionDisabled={isSecondaryImageActionDisabled}
           onPaste={handlePasteFromClipboard}
           onAddText={addTextLayer}
+          onAddSymbol={handleOpenSymbolPicker}
           onUploadFont={() => fontInputRef.current?.click()}
           onUtilityImageAction={
             compositionMode === 'collage' ? handleResetSelectedCollageImage : handleRecenterBackground
@@ -2013,15 +2072,37 @@ function App() {
           ) : null}
 
           {isPhoneViewport && isCanvasExpanded ? (
-            <div className="fullscreen-canvas-controls">
-              <button
-                type="button"
-                className="secondary canvas-expand-button"
-                onClick={() => setCanvasExpandedState(false)}
-              >
-                Свернуть
-              </button>
-            </div>
+            <>
+              <div className="fullscreen-canvas-controls">
+                <button
+                  type="button"
+                  className="secondary canvas-expand-button"
+                  onClick={() => setCanvasExpandedState(false)}
+                >
+                  Свернуть
+                </button>
+              </div>
+
+              {isSelectedCollageImage && selectedCollageScale !== null ? (
+                <div className="fullscreen-collage-scale-control">
+                  <div className="fullscreen-collage-scale-head">
+                    <span>Масштаб кадра</span>
+                    <strong>{Math.round(selectedCollageScale * 100)}%</strong>
+                  </div>
+                  <input
+                    type="range"
+                    min="100"
+                    max="300"
+                    step="1"
+                    value={Math.round(selectedCollageScale * 100)}
+                    onChange={(event) =>
+                      handleSelectedCollageScaleChange(Number(event.target.value) / 100)
+                    }
+                    aria-label="Масштаб выбранного кадра коллажа"
+                  />
+                </div>
+              ) : null}
+            </>
           ) : null}
 
           <EditorCanvas

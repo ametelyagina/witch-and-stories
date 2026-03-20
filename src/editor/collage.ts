@@ -26,6 +26,20 @@ export const COLLAGE_LAYOUTS: CollageLayoutDefinition[] = [
     slotCount: 4,
   },
   {
+    key: 'hero-top-3',
+    label: 'Главный сверху',
+    shortLabel: '1+3',
+    description: 'Большой кадр сверху и три маленьких снизу.',
+    slotCount: 4,
+  },
+  {
+    key: 'hero-bottom-3',
+    label: 'Главный снизу',
+    shortLabel: '3+1',
+    description: 'Три маленьких сверху и большой кадр снизу.',
+    slotCount: 4,
+  },
+  {
     key: 'stack-2',
     label: '2 полосы',
     shortLabel: '2',
@@ -50,6 +64,10 @@ export const getDefaultCollageOverscan = (layout: CollageLayout) => {
     return 1.2;
   }
 
+  if (layout === 'hero-top-3' || layout === 'hero-bottom-3') {
+    return 1.18;
+  }
+
   return 1.14;
 };
 export const COLLAGE_MIN_SPACING = 0;
@@ -68,6 +86,66 @@ const getFrameMetrics = (spacing: number) => {
   };
 };
 
+const buildHeroStripSlots = (
+  width: number,
+  height: number,
+  outer: number,
+  gap: number,
+  {
+    heroOnTop,
+  }: {
+    heroOnTop: boolean;
+  },
+): CollageSlot[] => {
+  const contentWidth = width - outer * 2;
+  const contentHeight = height - outer * 2 - gap;
+  const heroHeight = contentHeight * 0.72;
+  const stripHeight = contentHeight - heroHeight;
+  const sideWeight = 1;
+  const centerWeight = 1.35;
+  const totalWeight = sideWeight * 2 + centerWeight;
+  const stripUnit = (contentWidth - gap * 2) / totalWeight;
+  const sideWidth = stripUnit * sideWeight;
+  const centerWidth = stripUnit * centerWeight;
+  const heroY = heroOnTop ? outer : outer + stripHeight + gap;
+  const stripY = heroOnTop ? outer + heroHeight + gap : outer;
+
+  return [
+    {
+      id: 'slot-1',
+      label: 'Фото 1',
+      x: outer,
+      y: heroY,
+      width: contentWidth,
+      height: heroHeight,
+    },
+    {
+      id: 'slot-2',
+      label: 'Фото 2',
+      x: outer,
+      y: stripY,
+      width: sideWidth,
+      height: stripHeight,
+    },
+    {
+      id: 'slot-3',
+      label: 'Фото 3',
+      x: outer + sideWidth + gap,
+      y: stripY,
+      width: centerWidth,
+      height: stripHeight,
+    },
+    {
+      id: 'slot-4',
+      label: 'Фото 4',
+      x: outer + sideWidth + gap + centerWidth + gap,
+      y: stripY,
+      width: sideWidth,
+      height: stripHeight,
+    },
+  ];
+};
+
 export const getCollageLayoutDefinition = (layout: CollageLayout) =>
   COLLAGE_LAYOUTS.find((item) => item.key === layout) ?? COLLAGE_LAYOUTS[0];
 
@@ -78,6 +156,18 @@ export const getCollageSlots = (
   spacing = getDefaultCollageSpacing(width, height),
 ): CollageSlot[] => {
   const { outer, gap } = getFrameMetrics(spacing);
+
+  if (layout === 'hero-top-3') {
+    return buildHeroStripSlots(width, height, outer, gap, {
+      heroOnTop: true,
+    });
+  }
+
+  if (layout === 'hero-bottom-3') {
+    return buildHeroStripSlots(width, height, outer, gap, {
+      heroOnTop: false,
+    });
+  }
 
   if (layout === 'stack-2') {
     const slotWidth = width - outer * 2;

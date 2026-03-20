@@ -1,6 +1,11 @@
 export type Preset = 'story' | 'carousel';
 export type CompositionMode = 'single' | 'collage';
-export type CollageLayout = 'grid-4' | 'stack-2' | 'stack-3';
+export type CollageLayout =
+  | 'grid-4'
+  | 'hero-top-3'
+  | 'hero-bottom-3'
+  | 'stack-2'
+  | 'stack-3';
 export type ImageLayerKind = 'background' | 'overlay' | 'collage';
 
 export type PresetDefinition = {

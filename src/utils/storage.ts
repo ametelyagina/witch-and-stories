@@ -448,7 +448,11 @@ export const readState = async (): Promise<EditorPersistedState | null> => {
     const restoredCompositionMode: CompositionMode =
       parsed.compositionMode === 'collage' ? 'collage' : 'single';
     const restoredCollageLayout: CollageLayout =
-      parsed.collageLayout === 'stack-2'
+      parsed.collageLayout === 'hero-top-3'
+        ? 'hero-top-3'
+        : parsed.collageLayout === 'hero-bottom-3'
+          ? 'hero-bottom-3'
+          : parsed.collageLayout === 'stack-2'
         ? 'stack-2'
         : parsed.collageLayout === 'stack-3'
           ? 'stack-3'
